@@ -222,15 +222,6 @@
     </div>
 
     <div style="margin-top:16px">
-      <label class="f">일정 밀도</label>
-      <div class="seg" id="pace">
-        <button type="button" data-v="여유" aria-pressed="false">여유롭게</button>
-        <button type="button" data-v="보통" aria-pressed="true">보통</button>
-        <button type="button" data-v="알차게" aria-pressed="false">알차게</button>
-      </div>
-    </div>
-
-    <div style="margin-top:16px">
       <label class="f">이번엔 뭘 더 챙길까요? <span style="font-weight:500;color:var(--ink-soft)">(선택 · 기본은 내 평소 스타일)</span></label>
       <div class="chips" id="interests">
         <span class="chip" data-v="자연·전망대" aria-pressed="true">🏔️ 자연·전망대</span>
@@ -339,7 +330,7 @@ function hourOptions(){ let o=''; for(let h=0;h<24;h++){ const v=String(h).padSt
 function minOptions(){ let o=''; for(let m=0;m<60;m+=5){ const v=String(m).padStart(2,'0'); o+=`<option value="${v}">${v}분</option>`; } return o; }
 function segCard(label){
   const div=document.createElement('div');
-  div.className='flt seg';
+  div.className='flt flightseg';
   div.innerHTML=`
     <div class="flt-h"><span class="ic">✈️</span>
       <input class="seg-label" value="${label||''}" placeholder="구간 메모 (예: 출국 / 두바이 경유 1박 / 오사카→아마미 내부선 / 귀국)" />
@@ -365,14 +356,14 @@ addSeg('귀국');
 // delegation: delete + date auto-link + recompute
 segsEl.addEventListener('click', e=>{
   const del=e.target.closest('.seg-del'); if(!del)return;
-  const cards=segsEl.querySelectorAll('.seg');
+  const cards=segsEl.querySelectorAll('.flightseg');
   if(cards.length<=1){ flash('최소 한 구간은 있어야 해요.'); return; }
-  del.closest('.seg').remove(); computePeriod();
+  del.closest('.flightseg').remove(); computePeriod();
 });
 segsEl.addEventListener('input', e=>{
   const t=e.target;
   if(t.classList.contains('s-depDate')){
-    const card=t.closest('.seg'); const arr=card.querySelector('.s-arrDate');
+    const card=t.closest('.flightseg'); const arr=card.querySelector('.s-arrDate');
     if(!arr.value || !arr.dataset.touched) arr.value=t.value;
   }
   if(t.classList.contains('s-arrDate')) t.dataset.touched='1';
@@ -380,7 +371,7 @@ segsEl.addEventListener('input', e=>{
 });
 
 function readSegs(){
-  return [...segsEl.querySelectorAll('.seg')].map(c=>({
+  return [...segsEl.querySelectorAll('.flightseg')].map(c=>({
     label:c.querySelector('.seg-label').value.trim(),
     depDate:c.querySelector('.s-depDate').value, depTime:c.querySelector('.s-depTimeH').value+':'+c.querySelector('.s-depTimeM').value, depAir:c.querySelector('.s-depAir').value.trim(),
     arrDate:c.querySelector('.s-arrDate').value, arrTime:c.querySelector('.s-arrTimeH').value+':'+c.querySelector('.s-arrTimeM').value, arrAir:c.querySelector('.s-arrAir').value.trim(),
