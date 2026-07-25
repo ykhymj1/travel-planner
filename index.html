@@ -59,9 +59,11 @@
   .flt-h{display:flex; align-items:center; gap:7px; font-size:13px; font-weight:800; color:var(--pine); margin-bottom:10px}
   .flt-h .ic{font-size:15px}
   .flt .leg{font-size:11px; font-weight:800; color:var(--ink-soft); letter-spacing:.03em; margin:8px 0 5px}
-  .flt .dt{display:grid; grid-template-columns:1.35fr .95fr; gap:7px}
-  .flt input{padding:9px 10px; font-size:13px}
-  .flt input[type=date]{font-family:var(--mono); font-size:12px}
+  .flt .dt{display:grid; grid-template-columns:1fr 1fr; gap:7px}
+  .flt input{padding:9px 8px; font-size:13px; min-width:0}
+  .flt input[type=date]{font-family:var(--mono); font-size:11.5px; min-width:128px}
+  .flt input[type=time]{font-family:var(--mono); font-size:12px; min-width:92px}
+  @media(max-width:380px){ .flt .dt{grid-template-columns:1fr} }
   .flt .arrowsep{display:flex; align-items:center; gap:8px; margin:9px 0 3px; color:var(--lichen); font-size:12px; font-weight:700}
   .flt .arrowsep::before,.flt .arrowsep::after{content:""; flex:1; height:1px; background:var(--line)}
   .period{display:flex; align-items:center; gap:9px; margin-top:12px; padding:11px 14px; background:var(--pine); color:#fff; border-radius:12px; font-weight:700; font-size:14px}
@@ -75,6 +77,10 @@
   .seg-del{flex:none; width:26px; height:26px; border-radius:8px; border:1px solid var(--line); background:#fff; color:#a55; font-size:13px; cursor:pointer; line-height:1}
   .seg-del:hover{background:#fbeceb; border-color:#e0b3ae}
   #req{font-size:13.5px; line-height:1.5; resize:vertical; min-height:130px}
+  .warnbox{margin-top:14px; padding:11px 14px; background:#fbf3e5; border:1px solid #e6d5ab; border-radius:12px; font-size:12.5px; color:#7a5a1a}
+  .warnbox b{display:block; margin-bottom:4px; font-size:12.5px}
+  .drivebar{font-size:11.5px; color:var(--ink-soft); margin:6px 2px 0; font-family:var(--mono)}
+  .vbadge{display:inline-block; font-size:10px; font-weight:800; color:#1f6b4c; background:#e3efe7; border-radius:5px; padding:1px 5px; margin-left:5px; vertical-align:1px}
 
   .chips{display:flex; flex-wrap:wrap; gap:8px}
   .chip{
@@ -269,10 +275,10 @@
 <!-- CONNECTION MODAL -->
 <div class="ov" id="ovConn">
   <div class="sheet">
-    <h3>배포 연결 설정</h3>
-    <p>이 화면(Claude 아티팩트) 안에서는 바로 작동해요. GitHub Pages·Cloudflare Pages에 올려서 폰에서 쓰려면, 본인 API 키를 넣은 <b>Cloudflare Worker 주소</b>를 여기에 넣으면 그 주소로 호출합니다. (비우면 기본 방식)</p>
+    <h3>Worker 연결 설정 (필수)</h3>
+    <p>이 앱은 Gemini/Claude + 지도 API 여러 개를 서버(Cloudflare Worker)에서 순서대로 호출해 일정을 검증합니다. 브라우저에서 직접 호출할 수 없어서, <b>Worker 주소가 반드시 필요</b>합니다.</p>
     <input id="workerUrl" type="text" placeholder="https://ykh-travel-proxy.xxx.workers.dev" />
-    <p class="hint" style="margin-top:10px">Worker가 없으면 만들어 드릴게요 — 채팅으로 "Worker 코드 줘"라고 하시면 됩니다.</p>
+    <p class="hint" style="margin-top:10px">필수 시크릿: <b>GEMINI_API_KEY</b> (또는 ANTHROPIC_API_KEY). 선택: GOOGLE_MAPS_API_KEY, FOURSQUARE_API_KEY — 있으면 호텔·식당 좌표가 더 정확해집니다. worker.js 코드는 채팅에서 받으세요.</p>
     <div class="rowbtn">
       <button class="btn-ghost" data-close>닫기</button>
       <button class="btn-primary" id="saveConn">저장</button>
@@ -423,96 +429,30 @@ function showErr(t){ const m=$('#msg'); m.className='msg err'; m.innerHTML=t; }
 function pickInterests(){ return [...$('#interests').querySelectorAll('.chip[aria-pressed=true]')].map(c=>c.dataset.v); }
 function pickPace(){ return $('#pace').querySelector('button[aria-pressed=true]').dataset.v; }
 
-function buildPrompt(){
+/* ---------- 요청 데이터 조립 (해석·검증은 이제 Worker가 서버에서 단계별로 처리) ---------- */
+function buildRequestPayload(){
   const req=$('#req').value.trim();
-  const interests=pickInterests().join(', ');
   const pace=pickPace();
   const style=store.get('ykh_style');
   const segs=readSegs();
-
-  const segLines=segs.map((s,i)=>{
-    const dep=[s.depDate,s.depTime,s.depAir].filter(Boolean).join(' ');
-    const arr=[s.arrDate,s.arrTime,s.arrAir].filter(Boolean).join(' ');
-    const air=s.airline?` [${s.airline}]`:'';
-    return `  ${i+1}. ${s.label||'구간'}: ${dep} 출발 → ${arr} 도착${air}`;
-  }).join('\n');
-
-  const dateList=(PERIOD?PERIOD.dates:[]).map(x=>`${x.date} ${x.dow}`).join('  ·  ');
-  const span=PERIOD?`${PERIOD.nights}박 ${PERIOD.days}일`:'항공편 날짜 기준';
-
-  return `${style}
-
-━━━━━━━━━━━━━━━━━━
-[확정된 항공편 — 탄 순서대로]
-${segLines}
-
-[여행 기간 — 항공편으로 확정됨]
-- ${span}
-- 각 날짜 헤더는 반드시 아래 순서/요일 그대로 사용(빠짐없이 전부):
-  ${dateList}
-
-[여행 요구사항 — 사용자가 직접 쓴 것, 최우선으로 반영]
-${req || '(자유 요구사항 없음 — 평소 스타일대로)'}
-
-[보조 조건]
-- 일정 밀도: ${pace}
-- 관심 태그: ${interests||'평소 스타일대로'}
-
-위 "여행 스타일"과 특히 "여행 요구사항"을 철저히 반영해 상세 일정을 설계하라.
-
-[항공편 반영 규칙]
-- 각 항공편을 해당 날짜·시각에 items에 넣어라(type="move"). 첫 구간 출발은 집→공항, 마지막 구간 도착은 귀가.
-- 경유지에서 1박·2박 하면 그 도시를 그 기간 동안 관광 일정으로 채워라(공항 근처 or 시내 호텔 포함).
-- 여행 중 내부선으로 다른 지역 이동 시: 이동 전 렌트카 반납·공항 이동, 도착 후 새 렌트카 픽업을 반드시 넣어라.
-- 첫 목적지 도착이 늦으면 무리하지 말고 공항 근처 숙박. 귀국편은 출발 2시간 전 공항 도착으로 역산.
-
-[렌트카·호텔 추천 규칙]
-- rentalCar: 이 여행/지역에 가장 적합한 렌트카 회사를 실제 회사명으로 추천하고(일본이면 토요타렌터카/닛산렌터카/오릭스/타임즈, 오키나와면 OTS 등 현실적으로), 왜 좋은지 한 줄 이유, 픽업·반납 위치를 적어라. 요구사항에 선호 회사가 있으면 그걸 우선.
-- 매일 밤 숙소(hotel)를 실제 호텔명으로 지정. 일본은 천연온천 도미인 프리미엄 우선. note에 조식포함/무료취소/주차 여부. 마지막날 등 숙박 없으면 hotel=null.
-
-[구글 좌표 규칙 — 매우 중요]
-- 모든 관광지·식당·호텔·전망대 등 "장소"성 항목에는 실제 위경도(lat, lng)를 소수점 4~5자리로 정확히 넣어라. 잘 아는 실존 장소의 실제 좌표를 사용하고 추측/날조 금지. 좌표를 모르면 그 장소를 쓰지 말 것.
-- 단순 이동/공항 대기 등 좌표가 무의미한 항목은 lat/lng 생략 가능. 공항은 공항 좌표를 넣어라.
-
-반드시 아래 JSON "만" 출력(설명·마크다운·코드펜스 금지):
-{
- "title": "여행 제목",
- "summary": "이 일정의 한 줄 컨셉",
- "rentalCar": {"company":"실제 렌트카 회사명","reason":"추천 이유 한 줄","pickup":"픽업 위치","dropoff":"반납 위치"},
- "days": [
-   {
-     "date": "M/D 요일",
-     "label": "그날의 테마 한 줄",
-     "hotel": {"name":"실제 호텔명","note":"조식포함·천연온천·무료취소·주차무료 등","lat":00.0000,"lng":000.0000},
-     "items": [
-       {"time":"HH:MM","type":"nature|view|food|hotel|car|culture|shop|move|activity","title":"장소·활동명","note":"메모/대표메뉴/예약필요 등","lat":00.0000,"lng":000.0000}
-     ]
-   }
- ],
- "tips": ["실용 팁1","팁2","팁3"]
-}
-type: nature=자연/해변/공원, view=전망대, activity=케이블카/하이킹/온천/보트, food=식당, hotel=호텔체크인, car=렌트카, culture=미술관/박물관/성/사찰/신사/마을, shop=아울렛/마트/쇼핑, move=항공/기차/이동.
-- days 배열 길이와 각 date는 위 날짜 리스트와 정확히 일치. hotel 없으면 "hotel":null.`;
+  const dates=(PERIOD?PERIOD.dates:[]);
+  return { style, segments:segs, requirements:req, pace, dates };
 }
 
-/* ---------- API call ---------- */
-async function callClaude(prompt){
+/* ---------- Worker 호출 (Planner→Researcher→Optimizer→Critic 전체를 서버에서 처리) ---------- */
+async function callBrain(payload){
   const worker=store.get('ykh_worker');
-  const body={ model:"claude-sonnet-4-6", max_tokens:16000, messages:[{role:"user", content:prompt}] };
-  const url = worker ? worker : "https://api.anthropic.com/v1/messages";
-  const headers = {"Content-Type":"application/json"};
-  if(!worker){ headers["anthropic-version"]="2023-06-01"; headers["anthropic-dangerous-direct-browser-access"]="true"; }
-  const res = await fetch(url, {method:"POST", headers, body:JSON.stringify(body)});
-  if(!res.ok){ const t=await res.text().catch(()=> ''); throw new Error("서버 응답 오류 ("+res.status+") "+t.slice(0,180)); }
-  const data = await res.json();
-  const text = (data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join("\n");
-  return text;
-}
-function parseJSON(text){
-  let t=text.trim().replace(/^```json\s*/i,'').replace(/^```\s*/,'').replace(/```\s*$/,'').trim();
-  const a=t.indexOf('{'), b=t.lastIndexOf('}');
-  if(a>=0 && b>a) t=t.slice(a,b+1);
-  return JSON.parse(t);
+  if(!worker){ throw new Error('먼저 ⚙︎ Worker 연결 설정에서 Worker 주소를 넣어주세요. 지도 API·검증 단계는 브라우저에서 직접 호출할 수 없어요.'); }
+  const res = await fetch(worker, {
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body: JSON.stringify(payload)
+  });
+  const raw = await res.text();
+  let data;
+  try{ data=JSON.parse(raw); }catch{ throw new Error('Worker 응답이 JSON이 아니에요 (상태 '+res.status+'): '+raw.slice(0,200)); }
+  if(!res.ok || data.error){ throw new Error(data.error || ('Worker 오류 ('+res.status+')')); }
+  return data;
 }
 
 /* ---------- render ---------- */
@@ -543,18 +483,24 @@ function render(plan){
       ${rc.reason?`<div class="rc-why">${esc(rc.reason)}</div>`:''}
       <div class="rc-loc">${rc.pickup?`픽업 · ${esc(rc.pickup)}`:''}${rc.dropoff?`　반납 · ${esc(rc.dropoff)}`:''}</div></div>`;
   }
+  if(plan._meta && plan._meta.warnings && plan._meta.warnings.length){
+    h+=`<div class="warnbox"><b>⚠️ 검증 단계에서 발견된 사항</b>${plan._meta.warnings.map(w=>`· ${esc(w)}`).join('<br>')}</div>`;
+  }
 
   (plan.days||[]).forEach(day=>{
     h+=`<div class="day"><div class="day-head"><span class="day-date">${esc(day.date||'')}</span><span class="day-label">${esc(day.label||'')}</span></div>`;
     if(day.hotel && day.hotel.name){
       const ht=day.hotel;
-      h+=`<div class="hotelbar"><span class="tag t-hotel">숙소</span> <b>${esc(ht.name)}</b>${ht.note?` · <span class="a-note" style="display:inline">${esc(ht.note)}</span>`:''}${hasCoord(ht)?` <a class="mp" href="${mapsLink(ht)}" target="_blank" rel="noopener">📍 ${coordStr(ht)}</a>`:''}</div>`;
+      h+=`<div class="hotelbar"><span class="tag t-hotel">숙소</span> <b>${esc(ht.name)}</b>${ht.verified?'<span class="vbadge">✓검증</span>':''}${ht.note?` · <span class="a-note" style="display:inline">${esc(ht.note)}</span>`:''}${hasCoord(ht)?` <a class="mp" href="${mapsLink(ht)}" target="_blank" rel="noopener">📍 ${coordStr(ht)}</a>`:''}</div>`;
+    }
+    if(typeof day.driveMinutes==='number'){
+      h+=`<div class="drivebar">🚗 이 날 총 운전 약 ${Math.round(day.driveMinutes)}분${day.warning?' · ⚠️ '+esc(day.warning):''}</div>`;
     }
     h+=`<div class="rail">`;
     (day.items||[]).forEach(it=>{
       const tg=TAG[it.type]||['','t-move'];
       h+=`<div class="row"><div class="t">${esc(it.time||'')}</div><div>
-            <div class="a-title"><span class="tag ${tg[1]}">${tg[0]}</span>${esc(it.title||'')}</div>
+            <div class="a-title"><span class="tag ${tg[1]}">${tg[0]}</span>${esc(it.title||'')}${it.verified?'<span class="vbadge">✓검증</span>':''}</div>
             ${it.note?`<div class="a-note">${esc(it.note)}</div>`:''}
             ${hasCoord(it)?`<a class="mp" href="${mapsLink(it)}" target="_blank" rel="noopener">📍 ${coordStr(it)}</a>`:''}
           </div></div>`;
@@ -582,11 +528,15 @@ function buildDocHtml(p){
         <b>🚗 렌트카 추천:</b> ${esc(rc.company||'')}${rc.reason?` — ${esc(rc.reason)}`:''}<br>
         ${rc.pickup?`픽업: ${esc(rc.pickup)}　`:''}${rc.dropoff?`반납: ${esc(rc.dropoff)}`:''}</td></tr></table>`;
   }
+  if(p._meta && p._meta.warnings && p._meta.warnings.length){
+    b+=`<table width="100%" style="border-collapse:collapse;margin:0 0 12pt;background:#fbf3e5"><tr><td style="padding:8pt;border:1pt solid #e6d5ab">
+        <b>⚠️ 검증 단계 발견 사항:</b><br>${p._meta.warnings.map(w=>esc(w)).join('<br>')}</td></tr></table>`;
+  }
   (p.days||[]).forEach(d=>{
-    b+=`<h2 style="font-size:13pt;color:#fff;background:#204A3C;padding:5pt 8pt;margin:12pt 0 0">${esc(d.date||'')}　${esc(d.label||'')}</h2>`;
+    b+=`<h2 style="font-size:13pt;color:#fff;background:#204A3C;padding:5pt 8pt;margin:12pt 0 0">${esc(d.date||'')}　${esc(d.label||'')}${typeof d.driveMinutes==='number'?`　<span style="font-size:9pt;font-weight:normal">🚗 총 운전 약 ${Math.round(d.driveMinutes)}분</span>`:''}</h2>`;
     if(d.hotel && d.hotel.name){
       const ht=d.hotel;
-      b+=`<p style="margin:4pt 0;padding:4pt 8pt;background:#efeaf5"><b>🏨 숙소:</b> ${esc(ht.name)}${ht.note?` · ${esc(ht.note)}`:''}${hasCoord(ht)?` · 위경도 ${coordStr(ht)} · <a href="${mapsLink(ht)}">지도</a>`:''}</p>`;
+      b+=`<p style="margin:4pt 0;padding:4pt 8pt;background:#efeaf5"><b>🏨 숙소:</b> ${esc(ht.name)}${ht.verified?' ✓':''}${ht.note?` · ${esc(ht.note)}`:''}${hasCoord(ht)?` · 위경도 ${coordStr(ht)} · <a href="${mapsLink(ht)}">지도</a>`:''}</p>`;
     }
     b+=`<table width="100%" style="border-collapse:collapse;margin:4pt 0 0;font-size:10.5pt">
       <tr style="background:#e8ede8"><td width="12%" style="border:1pt solid #cdd6cd;padding:4pt"><b>시간</b></td><td width="10%" style="border:1pt solid #cdd6cd;padding:4pt"><b>구분</b></td><td width="34%" style="border:1pt solid #cdd6cd;padding:4pt"><b>장소·활동</b></td><td width="22%" style="border:1pt solid #cdd6cd;padding:4pt"><b>위경도(지도)</b></td><td style="border:1pt solid #cdd6cd;padding:4pt"><b>메모</b></td></tr>`;
@@ -595,7 +545,7 @@ function buildDocHtml(p){
       b+=`<tr>
         <td style="border:1pt solid #cdd6cd;padding:4pt;font-family:monospace">${esc(it.time||'')}</td>
         <td style="border:1pt solid #cdd6cd;padding:4pt">${TY[it.type]||''}</td>
-        <td style="border:1pt solid #cdd6cd;padding:4pt">${esc(it.title||'')}</td>
+        <td style="border:1pt solid #cdd6cd;padding:4pt">${esc(it.title||'')}${it.verified?' ✓':''}</td>
         <td style="border:1pt solid #cdd6cd;padding:4pt;font-size:9pt">${loc}</td>
         <td style="border:1pt solid #cdd6cd;padding:4pt;font-size:9.5pt;color:#555">${esc(it.note||'')}</td></tr>`;
     });
@@ -604,7 +554,7 @@ function buildDocHtml(p){
   if(p.tips&&p.tips.length){
     b+=`<h2 style="font-size:12pt;color:#204A3C;margin:14pt 0 4pt">챙길 것 · 팁</h2><ul>${p.tips.map(t=>`<li>${esc(t)}</li>`).join('')}</ul>`;
   }
-  b+=`<p style="color:#999;font-size:8.5pt;margin-top:16pt">※ 위경도는 AI가 추정한 값입니다. 내비게이션·업로드 전 중요한 위치는 확인하세요. · YKH 여정 설계소</p>`;
+  b+=`<p style="color:#999;font-size:8.5pt;margin-top:16pt">※ ✓ 표시는 실제 지도 API로 좌표를 검증한 항목입니다. 표시 없는 항목은 AI 추정치이니 확인하세요. · YKH 여정 설계소</p>`;
   return `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="utf-8"><title>${esc(p.title||'여행 일정')}</title></head><body style="font-family:'맑은 고딕','Malgun Gothic',sans-serif;font-size:11pt;line-height:1.5">${b}</body></html>`;
 }
 function safeName(s){ return (s||'여행일정').replace(/[\\/:*?"<>|]/g,' ').replace(/\s+/g,'_').slice(0,60); }
@@ -639,18 +589,22 @@ $('#go').addEventListener('click', async ()=>{
   if(!readSegs().some(s=>s.depDate||s.arrDate)){ showErr('먼저 <b>항공편 날짜</b>를 넣어주세요. 여행 기간이 거기서 정해져요.'); return; }
   if(!PERIOD){ showErr('여행 날짜 순서가 이상해요 — 항공편 날짜를 확인해 주세요.'); return; }
   if(!req){ showErr('<b>여행 요구사항</b> 칸에 지역과 원하는 것을 적어주세요.'); $('#req').focus(); return; }
+  if(!store.get('ykh_worker')){ showErr('먼저 <b>⚙︎ Worker 연결 설정</b>에서 Worker 주소를 넣어주세요.'); return; }
   $('#msg').className='msg';
   const go=$('#go'); go.classList.add('loading'); go.disabled=true;
-  const label=go.querySelector('.go-label'); const old=label.textContent; label.textContent='일정 짜는 중… (30~60초)';
+  const label=go.querySelector('.go-label'); const old=label.textContent;
+  const stages=['초안 생성 중… (Gemini/Claude)','실제 장소·좌표 검증 중…','동선·운전시간 계산 중…','최종 검수 중…'];
+  let si=0; label.textContent=stages[0];
+  const stageTimer=setInterval(()=>{ si=(si+1)%stages.length; label.textContent=stages[si]+' (최대 2~3분)'; }, 6000);
   try{
-    const text=await callClaude(buildPrompt());
-    const plan=parseJSON(text);
+    const plan=await callBrain(buildRequestPayload());
     render(plan);
     $('#msg').className='msg';
   }catch(err){
     console.error(err);
-    showErr('일정 생성에 실패했어요.<br><span style="color:#5a5a5a">'+esc(err.message||String(err))+'</span><br>일정이 길면 시간이 더 걸릴 수 있어요. 잠시 후 다시 시도하거나, 배포 환경이면 ⚙︎ 연결 설정을 확인해 주세요.');
+    showErr('일정 생성에 실패했어요.<br><span style="color:#5a5a5a">'+esc(err.message||String(err))+'</span><br>Worker 주소·시크릿(GEMINI_API_KEY 등)이 맞는지 ⚙︎ 연결 설정에서 확인해 주세요.');
   }finally{
+    clearInterval(stageTimer);
     go.classList.remove('loading'); go.disabled=false; label.textContent=old;
   }
 });
