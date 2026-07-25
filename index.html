@@ -1,0 +1,659 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>YKH 여정 설계소</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
+<style>
+  :root{
+    --paper:#EBEEE6; --card:#F7F8F2; --ink:#16231E; --ink-soft:#4C5A52;
+    --pine:#204A3C; --pine-2:#2E6350; --lichen:#6E9A82;
+    --amber:#BC7F32; --amber-soft:#E6BE84; --sky:#3B6C84;
+    --line:#D6DACE; --line-soft:#E4E7DE;
+    --shadow:0 1px 2px rgba(22,35,30,.06), 0 10px 30px rgba(22,35,30,.06);
+    --mono:"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    font-family:"Pretendard Variable", Pretendard, system-ui, sans-serif;
+    background:
+      radial-gradient(1200px 600px at 80% -10%, rgba(110,154,130,.18), transparent 60%),
+      radial-gradient(900px 500px at -10% 10%, rgba(59,108,132,.10), transparent 55%),
+      var(--paper);
+    color:var(--ink); line-height:1.55; -webkit-font-smoothing:antialiased;
+    padding:env(safe-area-inset-top) 0 40px;
+  }
+  .wrap{max-width:760px; margin:0 auto; padding:0 18px}
+
+  /* Header */
+  header{padding:26px 0 10px}
+  .brand{display:flex; align-items:baseline; gap:10px; flex-wrap:wrap}
+  .mark{
+    font-family:var(--mono); font-weight:700; letter-spacing:.14em; font-size:12px;
+    color:var(--pine); background:linear-gradient(180deg,var(--card),#eef1e8);
+    border:1px solid var(--line); border-radius:999px; padding:5px 11px;
+  }
+  h1{font-size:29px; line-height:1.1; margin:14px 0 4px; letter-spacing:-.02em; font-weight:800}
+  h1 .accent{color:var(--pine)}
+  .sub{color:var(--ink-soft); font-size:14px; margin:0}
+  .rule{height:1px; background:linear-gradient(90deg,var(--line),transparent); margin:20px 0}
+
+  /* Form card */
+  .panel{background:var(--card); border:1px solid var(--line); border-radius:18px; box-shadow:var(--shadow); padding:18px}
+  label.f{display:block; font-size:12.5px; font-weight:700; color:var(--ink-soft); letter-spacing:.01em; margin:0 0 6px}
+  .grid{display:grid; gap:14px}
+  @media(min-width:560px){ .grid.two{grid-template-columns:1.4fr .9fr} .grid.three{grid-template-columns:1fr 1fr 1fr} }
+  input[type=text], input[type=number], select, textarea{
+    width:100%; font:inherit; color:var(--ink); background:#fff;
+    border:1px solid var(--line); border-radius:12px; padding:11px 13px; outline:none;
+  }
+  input:focus, select:focus, textarea:focus{border-color:var(--pine-2); box-shadow:0 0 0 3px rgba(46,99,80,.14)}
+  .hint{font-size:11.5px; color:var(--ink-soft); margin:6px 2px 0}
+
+  /* Flight inputs */
+  .flt-wrap{display:grid; gap:12px}
+  @media(min-width:560px){ .flt-wrap{grid-template-columns:1fr 1fr} }
+  .flt{border:1px solid var(--line); border-radius:14px; background:linear-gradient(180deg,#fbfcf8,#f4f6ee); padding:13px}
+  .flt-h{display:flex; align-items:center; gap:7px; font-size:13px; font-weight:800; color:var(--pine); margin-bottom:10px}
+  .flt-h .ic{font-size:15px}
+  .flt .leg{font-size:11px; font-weight:800; color:var(--ink-soft); letter-spacing:.03em; margin:8px 0 5px}
+  .flt .dt{display:grid; grid-template-columns:1.35fr .95fr; gap:7px}
+  .flt input{padding:9px 10px; font-size:13px}
+  .flt input[type=date]{font-family:var(--mono); font-size:12px}
+  .flt .arrowsep{display:flex; align-items:center; gap:8px; margin:9px 0 3px; color:var(--lichen); font-size:12px; font-weight:700}
+  .flt .arrowsep::before,.flt .arrowsep::after{content:""; flex:1; height:1px; background:var(--line)}
+  .period{display:flex; align-items:center; gap:9px; margin-top:12px; padding:11px 14px; background:var(--pine); color:#fff; border-radius:12px; font-weight:700; font-size:14px}
+  .period .d{font-family:var(--mono); font-size:12px; opacity:.9; font-weight:500}
+  .period.warn{background:#8a6a2a}
+  .addseg{width:100%; margin-top:11px; font:inherit; font-weight:700; font-size:13.5px; color:var(--pine-2); background:#fff; border:1.5px dashed var(--lichen); border-radius:12px; padding:11px; cursor:pointer}
+  .addseg:hover{background:#f3f7f2}
+  .flt .flt-h{justify-content:space-between}
+  .flt .flt-h .seg-label{flex:1; font:inherit; font-weight:700; font-size:12.5px; color:var(--pine); background:transparent; border:0; border-bottom:1px solid var(--line); padding:2px 2px 4px; margin:0 8px; min-width:0}
+  .flt .flt-h .seg-label:focus{outline:none; border-bottom-color:var(--pine-2)}
+  .seg-del{flex:none; width:26px; height:26px; border-radius:8px; border:1px solid var(--line); background:#fff; color:#a55; font-size:13px; cursor:pointer; line-height:1}
+  .seg-del:hover{background:#fbeceb; border-color:#e0b3ae}
+  #req{font-size:13.5px; line-height:1.5; resize:vertical; min-height:130px}
+
+  .chips{display:flex; flex-wrap:wrap; gap:8px}
+  .chip{
+    font-size:13px; font-weight:600; color:var(--ink-soft);
+    border:1px solid var(--line); background:#fff; border-radius:999px;
+    padding:8px 13px; cursor:pointer; user-select:none; transition:.12s;
+  }
+  .chip[aria-pressed=true]{background:var(--pine); color:#fff; border-color:var(--pine)}
+  .seg{display:flex; background:#fff; border:1px solid var(--line); border-radius:12px; overflow:hidden}
+  .seg button{flex:1; font:inherit; font-weight:600; font-size:13px; color:var(--ink-soft); background:none; border:0; padding:11px 6px; cursor:pointer}
+  .seg button[aria-pressed=true]{background:var(--pine-2); color:#fff}
+
+  .go{
+    width:100%; margin-top:16px; font:inherit; font-weight:800; font-size:16px; letter-spacing:.01em;
+    color:#fff; background:linear-gradient(180deg,var(--pine-2),var(--pine));
+    border:0; border-radius:14px; padding:15px; cursor:pointer; box-shadow:0 8px 20px rgba(32,74,60,.28);
+    display:flex; align-items:center; justify-content:center; gap:9px;
+  }
+  .go:disabled{opacity:.6; cursor:default}
+  .go .spin{width:16px;height:16px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:sp .7s linear infinite;display:none}
+  .go.loading .spin{display:inline-block}
+  @keyframes sp{to{transform:rotate(360deg)}}
+
+  .tools{display:flex; justify-content:space-between; align-items:center; gap:10px; margin-top:12px}
+  .link{font-size:12.5px; color:var(--pine-2); background:none; border:0; cursor:pointer; font-weight:600; padding:6px 2px}
+  .link:hover{text-decoration:underline}
+
+  /* Result */
+  #out{margin-top:26px}
+  .r-head{display:flex; align-items:flex-start; justify-content:space-between; gap:14px; margin-bottom:6px}
+  .r-title{font-size:23px; font-weight:800; letter-spacing:-.01em; margin:0}
+  .r-sum{color:var(--ink-soft); font-size:14px; margin:8px 0 0}
+  .r-actions{display:flex; gap:8px; flex-shrink:0}
+  .iconbtn{font:inherit; font-size:12.5px; font-weight:700; color:var(--ink-soft); background:#fff; border:1px solid var(--line); border-radius:10px; padding:8px 11px; cursor:pointer; white-space:nowrap}
+  .iconbtn:hover{border-color:var(--pine-2); color:var(--pine)}
+
+  .dlbar{display:flex; gap:8px; align-items:center; margin-top:14px; flex-wrap:wrap}
+  .dl{font:inherit; font-weight:800; font-size:14.5px; color:#fff; background:linear-gradient(180deg,var(--amber-soft),var(--amber)); border:0; border-radius:12px; padding:12px 16px; cursor:pointer; box-shadow:0 6px 16px rgba(188,127,50,.3)}
+  .dl:hover{filter:brightness(1.03)}
+  .rc{margin-top:16px; background:linear-gradient(180deg,#eef4ee,#e9f0ea); border:1px solid var(--line); border-radius:14px; padding:13px 15px}
+  .rc-h{font-size:12.5px; font-weight:800; color:var(--pine); letter-spacing:.02em}
+  .rc-name{font-size:16px; font-weight:800; margin-top:3px}
+  .rc-why{font-size:13px; color:var(--ink-soft); margin-top:2px}
+  .rc-loc{font-size:12px; color:var(--ink-soft); margin-top:6px; font-family:var(--mono)}
+  .hotelbar{margin:10px 2px 2px; padding:9px 12px; background:#efeaf5; border-radius:10px; font-size:13.5px}
+  .mp{display:inline-block; font-family:var(--mono); font-size:11.5px; color:var(--sky); text-decoration:none; margin-top:3px; border-bottom:1px dotted var(--sky)}
+  .mp:hover{color:var(--pine-2)}
+
+  .day{margin-top:22px}
+  .day-head{display:flex; align-items:baseline; gap:12px; padding:0 2px 10px}
+  .day-date{font-family:var(--mono); font-weight:700; font-size:13px; color:#fff; background:var(--pine); border-radius:8px; padding:5px 10px; letter-spacing:.02em; white-space:nowrap}
+  .day-label{font-size:15px; font-weight:700; color:var(--ink)}
+
+  .rail{position:relative; padding-left:0}
+  .row{display:grid; grid-template-columns:60px 1fr; gap:12px; padding:9px 0; border-top:1px solid var(--line-soft)}
+  .row:first-child{border-top:0}
+  .t{font-family:var(--mono); font-size:13px; font-weight:600; color:var(--pine-2); padding-top:2px; text-align:right}
+  .a-title{font-size:15px; font-weight:600; letter-spacing:-.005em}
+  .a-note{font-size:13px; color:var(--ink-soft); margin-top:2px}
+  .tag{display:inline-block; font-size:11px; font-weight:800; letter-spacing:.02em; border-radius:6px; padding:2px 7px; margin-right:7px; vertical-align:1px}
+  .t-nature{background:#e3efe7; color:#1f6b4c}
+  .t-view{background:#e2edf2; color:#2c6684}
+  .t-food{background:#f6e9d7; color:#9a6417}
+  .t-hotel{background:#eae7f2; color:#5b4b86}
+  .t-car{background:#e9ece6; color:#4c5a52}
+  .t-culture{background:#f0e8e2; color:#8a5a3a}
+  .t-shop{background:#f3ecdd; color:#8a7a2a}
+  .t-move{background:#e6eaee; color:#495a6b}
+  .t-activity{background:#dfeeea; color:#1f6f63}
+
+  .tips{margin-top:24px; background:linear-gradient(180deg,#f6f4ea,#f2f4ec); border:1px solid var(--line); border-radius:16px; padding:16px 18px}
+  .tips h3{margin:0 0 10px; font-size:14px; font-weight:800; color:var(--pine); letter-spacing:.01em}
+  .tips ul{margin:0; padding-left:18px}
+  .tips li{font-size:13.5px; color:var(--ink-soft); margin:5px 0}
+
+  .msg{margin-top:16px; padding:13px 15px; border-radius:12px; font-size:13.5px; display:none}
+  .msg.err{display:block; background:#fbeceb; border:1px solid #f0c9c5; color:#8a2f28}
+  .msg.info{display:block; background:#eef3ee; border:1px solid var(--line); color:var(--ink-soft)}
+
+  /* Modal */
+  .ov{position:fixed; inset:0; background:rgba(22,35,30,.42); display:none; align-items:flex-end; justify-content:center; z-index:40}
+  .ov.open{display:flex}
+  @media(min-width:560px){ .ov.open{align-items:center} }
+  .sheet{width:100%; max-width:560px; background:var(--card); border:1px solid var(--line); border-radius:20px 20px 0 0; padding:20px; box-shadow:var(--shadow)}
+  @media(min-width:560px){ .sheet{border-radius:20px} }
+  .sheet h3{margin:0 0 4px; font-size:18px; font-weight:800}
+  .sheet p{margin:0 0 14px; font-size:13px; color:var(--ink-soft)}
+  .sheet textarea{min-height:220px; font-family:var(--mono); font-size:12.5px; line-height:1.5; resize:vertical}
+  .sheet .rowbtn{display:flex; gap:10px; margin-top:14px}
+  .sheet .rowbtn button{flex:1; font:inherit; font-weight:700; border-radius:12px; padding:12px; cursor:pointer; border:1px solid var(--line)}
+  .btn-primary{background:var(--pine); color:#fff; border-color:var(--pine)!important}
+  .btn-ghost{background:#fff; color:var(--ink-soft)}
+
+  footer{margin-top:30px; text-align:center; font-size:11.5px; color:var(--ink-soft)}
+  @media print{
+    body{background:#fff} .panel, header .brand, .tools, .r-actions, footer, .rule{display:none!important}
+    #out{margin-top:0}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand">
+      <span class="mark">YKH · TRAVEL PLANNER</span>
+    </div>
+    <h1>항공편만 넣으면<br><span class="accent">내 스타일 일정</span>을 DOC로 뽑아드려요.</h1>
+    <p class="sub">자연경관 · 렌트카 회사 추천 · 도미인 등 호텔 · 현지 맛집 · 모든 장소 구글좌표까지 — 다녀온 여행 습관 그대로. 최종 수정해 PDF로 저장하세요.</p>
+    <div class="rule"></div>
+  </header>
+
+  <!-- FORM -->
+  <section class="panel" id="form">
+    <label class="f">✈️ 왕복 항공권 (확정된 일정을 입력하세요)</label>
+    <div class="flt-wrap" id="segs"></div>
+    <button type="button" class="addseg" id="addSeg">＋ 항공편 추가 <span style="font-weight:500;color:var(--ink-soft)">(경유 1·2박 / 내부선 이동도 한 구간씩)</span></button>
+    <p class="hint">비행기 탄 순서대로 넣으세요. 경유지에서 자고 가면 그 구간을 따로 추가하고, 여행 중 다른 지역으로 비행하면 그것도 한 구간으로 추가하면 돼요.</p>
+    <div class="period" id="periodChip"><span>📅</span><span id="periodText">항공편 날짜를 넣으면 전체 여행 기간이 자동 계산돼요.</span></div>
+
+    <div style="margin-top:18px">
+      <label class="f" for="req">여행 요구사항 <span style="font-weight:500;color:var(--ink-soft)">(지역 + 원하는 것 전부 자유롭게)</span></label>
+      <textarea id="req" rows="6" placeholder="예) 홋카이도 후라노·비에이·비바이 중심으로.
+- 렌트카는 토요타나 닛산으로, 공항 픽업/반납.
+- 숙소는 천연온천 있는 도미인 프리미엄 우선, 조식포함·무료취소·주차 되는 곳.
+- 전망대·호수·꽃밭 위주, 하루 한 곳은 케이블카/로프웨이.
+- 저녁은 현지 맛집 예약해서(가이세키·야키니쿠 좋음), 대표메뉴도 적어줘.
+- 둘째날은 좀 알차게, 마지막날은 여유있게.
+- 아울렛이나 대형마트 한 번은 들르고 싶음."></textarea>
+      <p class="hint">여기 쓴 내용을 앱이 그대로 읽어서 렌트카 회사·호텔·동선까지 경호님 스타일로 반영합니다.</p>
+    </div>
+
+    <div style="margin-top:16px">
+      <label class="f">일정 밀도 <span style="font-weight:500;color:var(--ink-soft)">(요구사항에 적었으면 그게 우선)</span></label>
+      <div class="seg" id="pace">
+        <button type="button" data-v="여유" aria-pressed="false">여유롭게</button>
+        <button type="button" data-v="보통" aria-pressed="true">보통</button>
+        <button type="button" data-v="알차게" aria-pressed="false">알차게</button>
+      </div>
+    </div>
+
+    <div style="margin-top:16px">
+      <label class="f">일정 밀도</label>
+      <div class="seg" id="pace">
+        <button type="button" data-v="여유" aria-pressed="false">여유롭게</button>
+        <button type="button" data-v="보통" aria-pressed="true">보통</button>
+        <button type="button" data-v="알차게" aria-pressed="false">알차게</button>
+      </div>
+    </div>
+
+    <div style="margin-top:16px">
+      <label class="f">이번엔 뭘 더 챙길까요? <span style="font-weight:500;color:var(--ink-soft)">(선택 · 기본은 내 평소 스타일)</span></label>
+      <div class="chips" id="interests">
+        <span class="chip" data-v="자연·전망대" aria-pressed="true">🏔️ 자연·전망대</span>
+        <span class="chip" data-v="케이블카·하이킹" aria-pressed="true">🚡 케이블카·하이킹</span>
+        <span class="chip" data-v="현지 맛집 예약" aria-pressed="true">🍽️ 현지 맛집</span>
+        <span class="chip" data-v="온천" aria-pressed="false">♨️ 온천</span>
+        <span class="chip" data-v="미술관·박물관" aria-pressed="false">🖼️ 미술관·박물관</span>
+        <span class="chip" data-v="성·사찰·마을" aria-pressed="false">⛩️ 성·사찰·마을</span>
+        <span class="chip" data-v="아울렛·쇼핑" aria-pressed="false">🛍️ 아울렛·쇼핑</span>
+      </div>
+    </div>
+
+    <button class="go" id="go"><span class="spin"></span><span class="go-label">✳️ 내 스타일로 일정 만들기 → DOC</span></button>
+
+    <div class="tools">
+      <button class="link" id="editStyle">✎ 내 여행 스타일 보기 / 수정</button>
+      <button class="link" id="editConn">⚙︎ 배포 연결 설정</button>
+    </div>
+
+    <div class="msg" id="msg"></div>
+  </section>
+
+  <!-- RESULT -->
+  <section id="out"></section>
+
+  <footer>학습 기반: 히로시마·삿포로·오키나와·가고시마·후지산·교토·오사카근교·미야자키·아마미오시마 · 오스트리아·프랑스남부·스페인·프라하·돌로미티·아이슬란드·콜로라도·멕시코 여행 일정</footer>
+</div>
+
+<!-- STYLE MODAL -->
+<div class="ov" id="ovStyle">
+  <div class="sheet">
+    <h3>내 여행 스타일 프로필</h3>
+    <p>PDF 18개에서 학습한 습관이에요. 이 내용대로 일정을 짭니다. 자유롭게 고쳐도 돼요.</p>
+    <textarea id="styleText"></textarea>
+    <div class="rowbtn">
+      <button class="btn-ghost" data-close>닫기</button>
+      <button class="btn-primary" id="saveStyle">저장</button>
+    </div>
+  </div>
+</div>
+
+<!-- CONNECTION MODAL -->
+<div class="ov" id="ovConn">
+  <div class="sheet">
+    <h3>배포 연결 설정</h3>
+    <p>이 화면(Claude 아티팩트) 안에서는 바로 작동해요. GitHub Pages·Cloudflare Pages에 올려서 폰에서 쓰려면, 본인 API 키를 넣은 <b>Cloudflare Worker 주소</b>를 여기에 넣으면 그 주소로 호출합니다. (비우면 기본 방식)</p>
+    <input id="workerUrl" type="text" placeholder="https://ykh-travel-proxy.xxx.workers.dev" />
+    <p class="hint" style="margin-top:10px">Worker가 없으면 만들어 드릴게요 — 채팅으로 "Worker 코드 줘"라고 하시면 됩니다.</p>
+    <div class="rowbtn">
+      <button class="btn-ghost" data-close>닫기</button>
+      <button class="btn-primary" id="saveConn">저장</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ---------- tiny storage shim (works in artifact + when deployed) ---------- */
+const mem = {};
+const store = {
+  get(k){ try{ const v = localStorage.getItem(k); return v===null? (k in mem? mem[k]:null) : v; }catch(e){ return k in mem? mem[k]:null; } },
+  set(k,v){ try{ localStorage.setItem(k,v); }catch(e){} mem[k]=v; }
+};
+
+/* ---------- learned style profile (default) ---------- */
+const DEFAULT_STYLE = `[김경호(YKH)님 여행 스타일 — 18개 실제 여행일정 학습]
+
+■ 이동
+- 렌트카 중심 여행. 공항 도착 직후 렌트카 픽업, 마지막 날 공항에서 반납. 후불결제 선호.
+- 렌트카 픽업/반납 위치와 시간을 반드시 일정에 명시.
+- 교통체증·주차난 심한 대도시(교토·베네치아·빈 등)만 대중교통(시티카드/수상버스/특급열차) 이용.
+- 자연·산악 지역은 무조건 렌트카로 전망대·호수·산을 순회.
+
+■ 숙소
+- 깨끗한 호텔 선호. 일본에서는 '도미인(Dormy Inn)', 특히 천연온천 있는 '도미인 프리미엄'을 최우선.
+- 조식 포함은 거의 필수. 무료취소 가능 여부, 주차 가능/무료 여부를 항상 표기.
+- 동선을 따라 매일(또는 1~2박씩) 다른 지역 호텔로 이동하며 숙박. 되돌아오지 않는 순환/일주 동선 선호.
+
+■ 관광 (자연경관 최우선)
+- 전망대(Observatory/Overlook)·호수·폭포·협곡·산 정상을 가장 좋아함. 하루에 전망대 여러 곳도 OK.
+- 케이블카·곤돌라·로프웨이·푸니쿨라를 적극 활용해 산·정상에 오름.
+- 가볍거나 중간 강도의 하이킹(왕복 1~3시간) 포함. 무리한 등산은 아님.
+- 미술관·박물관·성·사찰·신사 등 문화유적도 곁들임(특히 유럽·도시).
+- 유네스코 세계문화유산 마을·구시가지 골목 산책을 즐김.
+- 아울렛, 현지 대형 슈퍼마켓/마트 구경도 일정에 자연스럽게 끼워 넣음.
+- 유연하게: "시간되면 ~", "시간 없으면 pass" 같은 대체·선택 항목을 둠.
+
+■ 식당
+- 현지 특색 맛집을 미리 예약. 코스요리·오마카세·가이세키·테판야키·야키니쿠 등 선호.
+- 식당 이름과 대표 메뉴(또는 코스명)를 함께 적음. 아침은 호텔 조식, 점심은 관광지 근처, 저녁은 예약 맛집.
+
+■ 일정표 작성 습관 (형식)
+- 날짜별로 시간표를 30분~1시간 단위로 촘촘히 배치(예: 11:00 / 11:30 / 12:30 …).
+- 하루 흐름: 호텔 체크아웃 → 관광지 여러 곳 → 점심 → 관광 → 저녁(예약 맛집) → 호텔 체크인.
+- 주차장 위치, 영업 종료시간, 예약 필요 여부 등 실용 정보를 메모로 덧붙임.
+- 동반 2인 여행(경호 + 미정) 기준.`;
+
+if(!store.get('ykh_style')) store.set('ykh_style', DEFAULT_STYLE);
+
+/* ---------- UI state ---------- */
+const $ = s=>document.querySelector(s);
+const val = id => (document.getElementById(id)?.value || '').trim();
+const DOW = ['일','월','화','수','목','금','토'];
+/* ---------- flight segments ---------- */
+const segsEl = $('#segs');
+function segCard(label){
+  const div=document.createElement('div');
+  div.className='flt seg';
+  div.innerHTML=`
+    <div class="flt-h"><span class="ic">✈️</span>
+      <input class="seg-label" value="${label||''}" placeholder="구간 메모 (예: 출국 / 두바이 경유 1박 / 오사카→아마미 내부선 / 귀국)" />
+      <button type="button" class="seg-del" title="이 구간 삭제">✕</button>
+    </div>
+    <div class="leg">출발</div>
+    <div class="dt"><input type="date" class="s-depDate" aria-label="출발일"><input type="time" class="s-depTime" aria-label="출발시각"></div>
+    <input type="text" class="s-depAir" placeholder="출발 공항·터미널" style="margin-top:7px" />
+    <div class="arrowsep">도착</div>
+    <div class="dt"><input type="date" class="s-arrDate" aria-label="도착일"><input type="time" class="s-arrTime" aria-label="도착시각"></div>
+    <input type="text" class="s-arrAir" placeholder="도착 공항" style="margin-top:7px" />
+    <input type="text" class="s-airline" placeholder="항공사 (선택)" style="margin-top:7px" />`;
+  return div;
+}
+function addSeg(label){ segsEl.appendChild(segCard(label)); }
+$('#addSeg').addEventListener('click', ()=>{ addSeg(''); });
+// init: 출국 + 귀국
+addSeg('출국');
+addSeg('귀국');
+
+// delegation: delete + date auto-link + recompute
+segsEl.addEventListener('click', e=>{
+  const del=e.target.closest('.seg-del'); if(!del)return;
+  const cards=segsEl.querySelectorAll('.seg');
+  if(cards.length<=1){ flash('최소 한 구간은 있어야 해요.'); return; }
+  del.closest('.seg').remove(); computePeriod();
+});
+segsEl.addEventListener('input', e=>{
+  const t=e.target;
+  if(t.classList.contains('s-depDate')){
+    const card=t.closest('.seg'); const arr=card.querySelector('.s-arrDate');
+    if(!arr.value || !arr.dataset.touched) arr.value=t.value;
+  }
+  if(t.classList.contains('s-arrDate')) t.dataset.touched='1';
+  if(t.classList.contains('s-depDate')||t.classList.contains('s-arrDate')) computePeriod();
+});
+
+function readSegs(){
+  return [...segsEl.querySelectorAll('.seg')].map(c=>({
+    label:c.querySelector('.seg-label').value.trim(),
+    depDate:c.querySelector('.s-depDate').value, depTime:c.querySelector('.s-depTime').value, depAir:c.querySelector('.s-depAir').value.trim(),
+    arrDate:c.querySelector('.s-arrDate').value, arrTime:c.querySelector('.s-arrTime').value, arrAir:c.querySelector('.s-arrAir').value.trim(),
+    airline:c.querySelector('.s-airline').value.trim()
+  }));
+}
+
+let PERIOD=null; // {nights, days, dates:[{date,dow}]}
+function computePeriod(){
+  const segs=readSegs();
+  const deps=segs.map(s=>s.depDate).filter(Boolean);
+  const arrs=segs.map(s=>s.arrDate).filter(Boolean);
+  const chip=$('#periodChip'), txt=$('#periodText');
+  PERIOD=null;
+  const all=[...deps,...arrs];
+  if(!all.length){ chip.classList.remove('warn'); txt.innerHTML='항공편 날짜를 넣으면 전체 여행 기간이 자동 계산돼요.'; return; }
+  const startIso=deps.sort()[0]||arrs.sort()[0];
+  const endIso=arrs.sort()[arrs.length-1]||deps.sort()[deps.length-1];
+  const s=new Date(startIso+'T00:00'), e=new Date(endIso+'T00:00');
+  const nights=Math.round((e-s)/86400000);
+  if(isNaN(nights) || nights<0){ chip.classList.add('warn'); txt.innerHTML='날짜 순서가 이상해요. 항공편 날짜를 확인해 주세요.'; return; }
+  const dates=[];
+  for(let i=0;i<=nights;i++){ const d=new Date(s.getTime()+i*86400000); dates.push({date:(d.getMonth()+1)+'/'+d.getDate(), dow:DOW[d.getDay()]}); }
+  PERIOD={nights, days:nights+1, dates, startIso, endIso};
+  chip.classList.remove('warn');
+  const first=dates[0], last=dates[dates.length-1];
+  txt.innerHTML=`<b>${nights}박 ${nights+1}일</b> &nbsp;<span class="d">${first.date}(${first.dow}) → ${last.date}(${last.dow})</span>`;
+}
+
+$('#pace').addEventListener('click', e=>{ const b=e.target.closest('button'); if(!b)return;
+  $('#pace').querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed', x===b)); });
+$('#interests').addEventListener('click', e=>{ const c=e.target.closest('.chip'); if(!c)return;
+  c.setAttribute('aria-pressed', c.getAttribute('aria-pressed')!=='true'); });
+
+/* modals */
+function openOv(id){ $(id).classList.add('open'); }
+function closeOv(el){ el.classList.remove('open'); }
+document.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click', e=>closeOv(e.target.closest('.ov'))));
+document.querySelectorAll('.ov').forEach(o=>o.addEventListener('click', e=>{ if(e.target===o) closeOv(o); }));
+
+$('#editStyle').addEventListener('click', ()=>{ $('#styleText').value=store.get('ykh_style'); openOv('#ovStyle'); });
+$('#saveStyle').addEventListener('click', ()=>{ store.set('ykh_style', $('#styleText').value.trim()||DEFAULT_STYLE); closeOv($('#ovStyle')); flash('스타일을 저장했어요.'); });
+$('#editConn').addEventListener('click', ()=>{ $('#workerUrl').value=store.get('ykh_worker')||''; openOv('#ovConn'); });
+$('#saveConn').addEventListener('click', ()=>{ store.set('ykh_worker', $('#workerUrl').value.trim()); closeOv($('#ovConn')); flash('연결 설정을 저장했어요.'); });
+
+function flash(t){ const m=$('#msg'); m.className='msg info'; m.textContent=t; setTimeout(()=>{ if(m.textContent===t) m.className='msg'; }, 2600); }
+function showErr(t){ const m=$('#msg'); m.className='msg err'; m.innerHTML=t; }
+
+/* ---------- prompt build ---------- */
+function pickInterests(){ return [...$('#interests').querySelectorAll('.chip[aria-pressed=true]')].map(c=>c.dataset.v); }
+function pickPace(){ return $('#pace').querySelector('button[aria-pressed=true]').dataset.v; }
+
+function buildPrompt(){
+  const req=$('#req').value.trim();
+  const interests=pickInterests().join(', ');
+  const pace=pickPace();
+  const style=store.get('ykh_style');
+  const segs=readSegs();
+
+  const segLines=segs.map((s,i)=>{
+    const dep=[s.depDate,s.depTime,s.depAir].filter(Boolean).join(' ');
+    const arr=[s.arrDate,s.arrTime,s.arrAir].filter(Boolean).join(' ');
+    const air=s.airline?` [${s.airline}]`:'';
+    return `  ${i+1}. ${s.label||'구간'}: ${dep} 출발 → ${arr} 도착${air}`;
+  }).join('\n');
+
+  const dateList=(PERIOD?PERIOD.dates:[]).map(x=>`${x.date} ${x.dow}`).join('  ·  ');
+  const span=PERIOD?`${PERIOD.nights}박 ${PERIOD.days}일`:'항공편 날짜 기준';
+
+  return `${style}
+
+━━━━━━━━━━━━━━━━━━
+[확정된 항공편 — 탄 순서대로]
+${segLines}
+
+[여행 기간 — 항공편으로 확정됨]
+- ${span}
+- 각 날짜 헤더는 반드시 아래 순서/요일 그대로 사용(빠짐없이 전부):
+  ${dateList}
+
+[여행 요구사항 — 사용자가 직접 쓴 것, 최우선으로 반영]
+${req || '(자유 요구사항 없음 — 평소 스타일대로)'}
+
+[보조 조건]
+- 일정 밀도: ${pace}
+- 관심 태그: ${interests||'평소 스타일대로'}
+
+위 "여행 스타일"과 특히 "여행 요구사항"을 철저히 반영해 상세 일정을 설계하라.
+
+[항공편 반영 규칙]
+- 각 항공편을 해당 날짜·시각에 items에 넣어라(type="move"). 첫 구간 출발은 집→공항, 마지막 구간 도착은 귀가.
+- 경유지에서 1박·2박 하면 그 도시를 그 기간 동안 관광 일정으로 채워라(공항 근처 or 시내 호텔 포함).
+- 여행 중 내부선으로 다른 지역 이동 시: 이동 전 렌트카 반납·공항 이동, 도착 후 새 렌트카 픽업을 반드시 넣어라.
+- 첫 목적지 도착이 늦으면 무리하지 말고 공항 근처 숙박. 귀국편은 출발 2시간 전 공항 도착으로 역산.
+
+[렌트카·호텔 추천 규칙]
+- rentalCar: 이 여행/지역에 가장 적합한 렌트카 회사를 실제 회사명으로 추천하고(일본이면 토요타렌터카/닛산렌터카/오릭스/타임즈, 오키나와면 OTS 등 현실적으로), 왜 좋은지 한 줄 이유, 픽업·반납 위치를 적어라. 요구사항에 선호 회사가 있으면 그걸 우선.
+- 매일 밤 숙소(hotel)를 실제 호텔명으로 지정. 일본은 천연온천 도미인 프리미엄 우선. note에 조식포함/무료취소/주차 여부. 마지막날 등 숙박 없으면 hotel=null.
+
+[구글 좌표 규칙 — 매우 중요]
+- 모든 관광지·식당·호텔·전망대 등 "장소"성 항목에는 실제 위경도(lat, lng)를 소수점 4~5자리로 정확히 넣어라. 잘 아는 실존 장소의 실제 좌표를 사용하고 추측/날조 금지. 좌표를 모르면 그 장소를 쓰지 말 것.
+- 단순 이동/공항 대기 등 좌표가 무의미한 항목은 lat/lng 생략 가능. 공항은 공항 좌표를 넣어라.
+
+반드시 아래 JSON "만" 출력(설명·마크다운·코드펜스 금지):
+{
+ "title": "여행 제목",
+ "summary": "이 일정의 한 줄 컨셉",
+ "rentalCar": {"company":"실제 렌트카 회사명","reason":"추천 이유 한 줄","pickup":"픽업 위치","dropoff":"반납 위치"},
+ "days": [
+   {
+     "date": "M/D 요일",
+     "label": "그날의 테마 한 줄",
+     "hotel": {"name":"실제 호텔명","note":"조식포함·천연온천·무료취소·주차무료 등","lat":00.0000,"lng":000.0000},
+     "items": [
+       {"time":"HH:MM","type":"nature|view|food|hotel|car|culture|shop|move|activity","title":"장소·활동명","note":"메모/대표메뉴/예약필요 등","lat":00.0000,"lng":000.0000}
+     ]
+   }
+ ],
+ "tips": ["실용 팁1","팁2","팁3"]
+}
+type: nature=자연/해변/공원, view=전망대, activity=케이블카/하이킹/온천/보트, food=식당, hotel=호텔체크인, car=렌트카, culture=미술관/박물관/성/사찰/신사/마을, shop=아울렛/마트/쇼핑, move=항공/기차/이동.
+- days 배열 길이와 각 date는 위 날짜 리스트와 정확히 일치. hotel 없으면 "hotel":null.`;
+}
+
+/* ---------- API call ---------- */
+async function callClaude(prompt){
+  const worker=store.get('ykh_worker');
+  const body={ model:"claude-sonnet-4-6", max_tokens:16000, messages:[{role:"user", content:prompt}] };
+  const url = worker ? worker : "https://api.anthropic.com/v1/messages";
+  const headers = {"Content-Type":"application/json"};
+  if(!worker){ headers["anthropic-version"]="2023-06-01"; headers["anthropic-dangerous-direct-browser-access"]="true"; }
+  const res = await fetch(url, {method:"POST", headers, body:JSON.stringify(body)});
+  if(!res.ok){ const t=await res.text().catch(()=> ''); throw new Error("서버 응답 오류 ("+res.status+") "+t.slice(0,180)); }
+  const data = await res.json();
+  const text = (data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join("\n");
+  return text;
+}
+function parseJSON(text){
+  let t=text.trim().replace(/^```json\s*/i,'').replace(/^```\s*/,'').replace(/```\s*$/,'').trim();
+  const a=t.indexOf('{'), b=t.lastIndexOf('}');
+  if(a>=0 && b>a) t=t.slice(a,b+1);
+  return JSON.parse(t);
+}
+
+/* ---------- render ---------- */
+const TAG={nature:['자연','t-nature'],view:['전망대','t-view'],activity:['액티비티','t-activity'],food:['식당','t-food'],hotel:['호텔','t-hotel'],car:['렌트카','t-car'],culture:['문화','t-culture'],shop:['쇼핑','t-shop'],move:['이동','t-move']};
+function esc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function hasCoord(o){ return o && typeof o.lat==='number' && typeof o.lng==='number' && !(o.lat===0&&o.lng===0); }
+function coordStr(o){ return o.lat.toFixed(5)+', '+o.lng.toFixed(5); }
+function mapsLink(o){ return 'https://www.google.com/maps/search/?api=1&query='+o.lat+','+o.lng; }
+
+let LAST=null;
+function render(plan){
+  LAST=plan;
+  const out=$('#out');
+  let h=`<div class="r-head">
+      <div><h2 class="r-title">${esc(plan.title||'여행 일정')}</h2>${plan.summary?`<p class="r-sum">${esc(plan.summary)}</p>`:''}</div>
+    </div>
+    <div class="dlbar">
+      <button class="dl" id="docBtn">📄 DOC 파일 다운로드</button>
+      <button class="iconbtn" id="copyBtn">텍스트 복사</button>
+      <button class="iconbtn" id="printBtn">인쇄·PDF</button>
+    </div>
+    <p class="hint" style="margin:8px 2px 0">DOC를 받아 Word/구글독스에서 최종 수정 → PDF로 저장해 여행앱에 올리세요. 좌표는 AI 추정이니 중요한 곳은 확인하세요.</p>`;
+
+  if(plan.rentalCar && (plan.rentalCar.company||plan.rentalCar.reason)){
+    const rc=plan.rentalCar;
+    h+=`<div class="rc"><div class="rc-h">🚗 렌트카 추천</div>
+      <div class="rc-name">${esc(rc.company||'')}</div>
+      ${rc.reason?`<div class="rc-why">${esc(rc.reason)}</div>`:''}
+      <div class="rc-loc">${rc.pickup?`픽업 · ${esc(rc.pickup)}`:''}${rc.dropoff?`　반납 · ${esc(rc.dropoff)}`:''}</div></div>`;
+  }
+
+  (plan.days||[]).forEach(day=>{
+    h+=`<div class="day"><div class="day-head"><span class="day-date">${esc(day.date||'')}</span><span class="day-label">${esc(day.label||'')}</span></div>`;
+    if(day.hotel && day.hotel.name){
+      const ht=day.hotel;
+      h+=`<div class="hotelbar"><span class="tag t-hotel">숙소</span> <b>${esc(ht.name)}</b>${ht.note?` · <span class="a-note" style="display:inline">${esc(ht.note)}</span>`:''}${hasCoord(ht)?` <a class="mp" href="${mapsLink(ht)}" target="_blank" rel="noopener">📍 ${coordStr(ht)}</a>`:''}</div>`;
+    }
+    h+=`<div class="rail">`;
+    (day.items||[]).forEach(it=>{
+      const tg=TAG[it.type]||['','t-move'];
+      h+=`<div class="row"><div class="t">${esc(it.time||'')}</div><div>
+            <div class="a-title"><span class="tag ${tg[1]}">${tg[0]}</span>${esc(it.title||'')}</div>
+            ${it.note?`<div class="a-note">${esc(it.note)}</div>`:''}
+            ${hasCoord(it)?`<a class="mp" href="${mapsLink(it)}" target="_blank" rel="noopener">📍 ${coordStr(it)}</a>`:''}
+          </div></div>`;
+    });
+    h+=`</div></div>`;
+  });
+  if(plan.tips&&plan.tips.length){
+    h+=`<div class="tips"><h3>챙길 것 · 팁</h3><ul>${plan.tips.map(t=>`<li>${esc(t)}</li>`).join('')}</ul></div>`;
+  }
+  out.innerHTML=h;
+  $('#docBtn').addEventListener('click', downloadDoc);
+  $('#copyBtn').addEventListener('click', copyText);
+  $('#printBtn').addEventListener('click', ()=>window.print());
+  out.scrollIntoView({behavior:'smooth', block:'start'});
+}
+
+/* ---------- DOC 파일 생성 ---------- */
+function buildDocHtml(p){
+  const TY={nature:'자연',view:'전망대',activity:'액티비티',food:'식당',hotel:'호텔',car:'렌트카',culture:'문화',shop:'쇼핑',move:'이동'};
+  let b=`<h1 style="font-size:20pt;color:#204A3C;margin:0 0 4pt">${esc(p.title||'여행 일정')}</h1>`;
+  if(p.summary) b+=`<p style="color:#555;margin:0 0 10pt">${esc(p.summary)}</p>`;
+  if(p.rentalCar && p.rentalCar.company){
+    const rc=p.rentalCar;
+    b+=`<table width="100%" style="border-collapse:collapse;margin:0 0 12pt;background:#f2f6f2"><tr><td style="padding:8pt;border:1pt solid #cdd6cd">
+        <b>🚗 렌트카 추천:</b> ${esc(rc.company||'')}${rc.reason?` — ${esc(rc.reason)}`:''}<br>
+        ${rc.pickup?`픽업: ${esc(rc.pickup)}　`:''}${rc.dropoff?`반납: ${esc(rc.dropoff)}`:''}</td></tr></table>`;
+  }
+  (p.days||[]).forEach(d=>{
+    b+=`<h2 style="font-size:13pt;color:#fff;background:#204A3C;padding:5pt 8pt;margin:12pt 0 0">${esc(d.date||'')}　${esc(d.label||'')}</h2>`;
+    if(d.hotel && d.hotel.name){
+      const ht=d.hotel;
+      b+=`<p style="margin:4pt 0;padding:4pt 8pt;background:#efeaf5"><b>🏨 숙소:</b> ${esc(ht.name)}${ht.note?` · ${esc(ht.note)}`:''}${hasCoord(ht)?` · 위경도 ${coordStr(ht)} · <a href="${mapsLink(ht)}">지도</a>`:''}</p>`;
+    }
+    b+=`<table width="100%" style="border-collapse:collapse;margin:4pt 0 0;font-size:10.5pt">
+      <tr style="background:#e8ede8"><td width="12%" style="border:1pt solid #cdd6cd;padding:4pt"><b>시간</b></td><td width="10%" style="border:1pt solid #cdd6cd;padding:4pt"><b>구분</b></td><td width="34%" style="border:1pt solid #cdd6cd;padding:4pt"><b>장소·활동</b></td><td width="22%" style="border:1pt solid #cdd6cd;padding:4pt"><b>위경도(지도)</b></td><td style="border:1pt solid #cdd6cd;padding:4pt"><b>메모</b></td></tr>`;
+    (d.items||[]).forEach(it=>{
+      const loc=hasCoord(it)?`${coordStr(it)}<br><a href="${mapsLink(it)}">지도 열기</a>`:'';
+      b+=`<tr>
+        <td style="border:1pt solid #cdd6cd;padding:4pt;font-family:monospace">${esc(it.time||'')}</td>
+        <td style="border:1pt solid #cdd6cd;padding:4pt">${TY[it.type]||''}</td>
+        <td style="border:1pt solid #cdd6cd;padding:4pt">${esc(it.title||'')}</td>
+        <td style="border:1pt solid #cdd6cd;padding:4pt;font-size:9pt">${loc}</td>
+        <td style="border:1pt solid #cdd6cd;padding:4pt;font-size:9.5pt;color:#555">${esc(it.note||'')}</td></tr>`;
+    });
+    b+=`</table>`;
+  });
+  if(p.tips&&p.tips.length){
+    b+=`<h2 style="font-size:12pt;color:#204A3C;margin:14pt 0 4pt">챙길 것 · 팁</h2><ul>${p.tips.map(t=>`<li>${esc(t)}</li>`).join('')}</ul>`;
+  }
+  b+=`<p style="color:#999;font-size:8.5pt;margin-top:16pt">※ 위경도는 AI가 추정한 값입니다. 내비게이션·업로드 전 중요한 위치는 확인하세요. · YKH 여정 설계소</p>`;
+  return `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="utf-8"><title>${esc(p.title||'여행 일정')}</title></head><body style="font-family:'맑은 고딕','Malgun Gothic',sans-serif;font-size:11pt;line-height:1.5">${b}</body></html>`;
+}
+function safeName(s){ return (s||'여행일정').replace(/[\\/:*?"<>|]/g,' ').replace(/\s+/g,'_').slice(0,60); }
+function downloadDoc(){
+  const html=buildDocHtml(LAST);
+  const blob=new Blob(['\ufeff'+html], {type:'application/msword'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url; a.download=safeName(LAST.title)+'.doc';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 1500);
+  flash('DOC 파일을 내려받았어요.');
+}
+
+function planToText(p){
+  let s=(p.title||'여행 일정')+'\n';
+  if(p.summary) s+='('+p.summary+')\n';
+  if(p.rentalCar && p.rentalCar.company){ s+='\n[렌트카] '+p.rentalCar.company+(p.rentalCar.reason?' — '+p.rentalCar.reason:''); if(p.rentalCar.pickup||p.rentalCar.dropoff) s+=' (픽업 '+(p.rentalCar.pickup||'')+' / 반납 '+(p.rentalCar.dropoff||'')+')'; s+='\n'; }
+  (p.days||[]).forEach(d=>{
+    s+='\n'+(d.date||'')+(d.label?'  '+d.label:'')+'\n';
+    if(d.hotel&&d.hotel.name){ s+='  🏨 '+d.hotel.name+(d.hotel.note?' ['+d.hotel.note+']':'')+(hasCoord(d.hotel)?'  '+coordStr(d.hotel):'')+'\n'; }
+    (d.items||[]).forEach(it=>{ s+='  '+(it.time||'')+'  '+(it.title||'')+(it.note?'  ['+it.note+']':'')+(hasCoord(it)?'  ('+coordStr(it)+')':'')+'\n'; });
+  });
+  if(p.tips&&p.tips.length){ s+='\n[팁]\n'; p.tips.forEach(t=>s+=' - '+t+'\n'); }
+  return s;
+}
+function copyText(){ const t=planToText(LAST); navigator.clipboard.writeText(t).then(()=>flash('일정을 텍스트로 복사했어요.'),()=>flash('복사 실패 — 길게 눌러 복사해 주세요.')); }
+
+/* ---------- go ---------- */
+$('#go').addEventListener('click', async ()=>{
+  const req=$('#req').value.trim();
+  if(!readSegs().some(s=>s.depDate||s.arrDate)){ showErr('먼저 <b>항공편 날짜</b>를 넣어주세요. 여행 기간이 거기서 정해져요.'); return; }
+  if(!PERIOD){ showErr('여행 날짜 순서가 이상해요 — 항공편 날짜를 확인해 주세요.'); return; }
+  if(!req){ showErr('<b>여행 요구사항</b> 칸에 지역과 원하는 것을 적어주세요.'); $('#req').focus(); return; }
+  $('#msg').className='msg';
+  const go=$('#go'); go.classList.add('loading'); go.disabled=true;
+  const label=go.querySelector('.go-label'); const old=label.textContent; label.textContent='일정 짜는 중… (30~60초)';
+  try{
+    const text=await callClaude(buildPrompt());
+    const plan=parseJSON(text);
+    render(plan);
+    $('#msg').className='msg';
+  }catch(err){
+    console.error(err);
+    showErr('일정 생성에 실패했어요.<br><span style="color:#5a5a5a">'+esc(err.message||String(err))+'</span><br>일정이 길면 시간이 더 걸릴 수 있어요. 잠시 후 다시 시도하거나, 배포 환경이면 ⚙︎ 연결 설정을 확인해 주세요.');
+  }finally{
+    go.classList.remove('loading'); go.disabled=false; label.textContent=old;
+  }
+});
+</script>
+</body>
+</html>
