@@ -59,11 +59,11 @@
   .flt-h{display:flex; align-items:center; gap:7px; font-size:13px; font-weight:800; color:var(--pine); margin-bottom:10px}
   .flt-h .ic{font-size:15px}
   .flt .leg{font-size:11px; font-weight:800; color:var(--ink-soft); letter-spacing:.03em; margin:8px 0 5px}
-  .flt .dt{display:grid; grid-template-columns:1fr 1fr; gap:7px}
-  .flt input{padding:9px 8px; font-size:13px; min-width:0}
-  .flt input[type=date]{font-family:var(--mono); font-size:11.5px; min-width:128px}
-  .flt input[type=time]{font-family:var(--mono); font-size:12px; min-width:92px}
-  @media(max-width:380px){ .flt .dt{grid-template-columns:1fr} }
+  .flt input.fulldate{width:100%; padding:10px 10px; font-size:14px; font-family:var(--mono)}
+  .flt .timesel{display:flex; align-items:center; gap:6px; margin-top:7px}
+  .flt .timesel select{flex:1; padding:9px 8px; font-size:14px; font-family:var(--mono); background:#fff; border:1px solid var(--line); border-radius:12px; color:var(--ink)}
+  .flt .timesel span{color:var(--ink-soft); font-weight:700}
+  .flt input{padding:9px 10px; font-size:13px; min-width:0}
   .flt .arrowsep{display:flex; align-items:center; gap:8px; margin:9px 0 3px; color:var(--lichen); font-size:12px; font-weight:700}
   .flt .arrowsep::before,.flt .arrowsep::after{content:""; flex:1; height:1px; background:var(--line)}
   .period{display:flex; align-items:center; gap:9px; margin-top:12px; padding:11px 14px; background:var(--pine); color:#fff; border-radius:12px; font-weight:700; font-size:14px}
@@ -335,6 +335,8 @@ const val = id => (document.getElementById(id)?.value || '').trim();
 const DOW = ['일','월','화','수','목','금','토'];
 /* ---------- flight segments ---------- */
 const segsEl = $('#segs');
+function hourOptions(){ let o=''; for(let h=0;h<24;h++){ const v=String(h).padStart(2,'0'); o+=`<option value="${v}">${v}시</option>`; } return o; }
+function minOptions(){ let o=''; for(let m=0;m<60;m+=5){ const v=String(m).padStart(2,'0'); o+=`<option value="${v}">${v}분</option>`; } return o; }
 function segCard(label){
   const div=document.createElement('div');
   div.className='flt seg';
@@ -344,10 +346,12 @@ function segCard(label){
       <button type="button" class="seg-del" title="이 구간 삭제">✕</button>
     </div>
     <div class="leg">출발</div>
-    <div class="dt"><input type="date" class="s-depDate" aria-label="출발일"><input type="time" class="s-depTime" aria-label="출발시각"></div>
+    <input type="date" class="s-depDate fulldate" aria-label="출발일">
+    <div class="timesel"><select class="s-depTimeH" aria-label="출발 시">${hourOptions()}</select><span>:</span><select class="s-depTimeM" aria-label="출발 분">${minOptions()}</select></div>
     <input type="text" class="s-depAir" placeholder="출발 공항·터미널" style="margin-top:7px" />
     <div class="arrowsep">도착</div>
-    <div class="dt"><input type="date" class="s-arrDate" aria-label="도착일"><input type="time" class="s-arrTime" aria-label="도착시각"></div>
+    <input type="date" class="s-arrDate fulldate" aria-label="도착일">
+    <div class="timesel"><select class="s-arrTimeH" aria-label="도착 시">${hourOptions()}</select><span>:</span><select class="s-arrTimeM" aria-label="도착 분">${minOptions()}</select></div>
     <input type="text" class="s-arrAir" placeholder="도착 공항" style="margin-top:7px" />
     <input type="text" class="s-airline" placeholder="항공사 (선택)" style="margin-top:7px" />`;
   return div;
@@ -378,8 +382,8 @@ segsEl.addEventListener('input', e=>{
 function readSegs(){
   return [...segsEl.querySelectorAll('.seg')].map(c=>({
     label:c.querySelector('.seg-label').value.trim(),
-    depDate:c.querySelector('.s-depDate').value, depTime:c.querySelector('.s-depTime').value, depAir:c.querySelector('.s-depAir').value.trim(),
-    arrDate:c.querySelector('.s-arrDate').value, arrTime:c.querySelector('.s-arrTime').value, arrAir:c.querySelector('.s-arrAir').value.trim(),
+    depDate:c.querySelector('.s-depDate').value, depTime:c.querySelector('.s-depTimeH').value+':'+c.querySelector('.s-depTimeM').value, depAir:c.querySelector('.s-depAir').value.trim(),
+    arrDate:c.querySelector('.s-arrDate').value, arrTime:c.querySelector('.s-arrTimeH').value+':'+c.querySelector('.s-arrTimeM').value, arrAir:c.querySelector('.s-arrAir').value.trim(),
     airline:c.querySelector('.s-airline').value.trim()
   }));
 }
