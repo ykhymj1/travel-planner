@@ -81,6 +81,15 @@
   .warnbox b{display:block; margin-bottom:4px; font-size:12.5px}
   .drivebar{font-size:11.5px; color:var(--ink-soft); margin:6px 2px 0; font-family:var(--mono)}
   .vbadge{display:inline-block; font-size:10px; font-weight:800; color:#1f6b4c; background:#e3efe7; border-radius:5px; padding:1px 5px; margin-left:5px; vertical-align:1px}
+  .histbar{display:flex; align-items:center; justify-content:space-between; margin-top:22px; font-size:13px; font-weight:700; color:var(--ink-soft)}
+  #histList{margin-top:10px; display:flex; flex-direction:column; gap:8px}
+  .histitem{display:flex; align-items:center; gap:10px; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:11px 13px; cursor:pointer}
+  .histitem:hover{border-color:var(--pine-2)}
+  .histitem .hi-title{flex:1; font-size:13.5px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .histitem .hi-time{font-size:11px; color:var(--ink-soft); font-family:var(--mono); flex-shrink:0}
+  .histitem .hi-del{flex-shrink:0; width:24px; height:24px; border-radius:7px; border:1px solid var(--line); background:#fff; color:#a55; font-size:12px; cursor:pointer}
+  .histitem .hi-del:hover{background:#fbeceb; border-color:#e0b3ae}
+  .histempty{font-size:12.5px; color:var(--ink-soft); padding:8px 2px}
 
   .chips{display:flex; flex-wrap:wrap; gap:8px}
   .chip{
@@ -242,6 +251,15 @@
     </div>
 
     <div class="msg" id="msg"></div>
+  </section>
+
+  <!-- HISTORY -->
+  <section id="histWrap" style="display:none">
+    <div class="histbar">
+      <span>🕑 최근 만든 일정 <span style="font-weight:500;color:var(--ink-soft)">(2일간만 보관 — 자동 삭제됩니다)</span></span>
+      <button class="link" id="histRefresh" style="padding:2px 4px">↻ 새로고침</button>
+    </div>
+    <div id="histList"></div>
   </section>
 
   <!-- RESULT -->
@@ -450,6 +468,63 @@ async function callBrain(payload){
   return data;
 }
 
+/* ---------- 최근 만든 일정 (2일 보관 — Worker KV 설정시 서버, 아니면 로컬 저장) ---------- */
+const HIST_KEY='ykh_history';
+const HIST_MAX_AGE_MS=2*24*60*60*1000; // 2일
+const HIST_MAX_COUNT=15;
+const HIST_MAX_BYTES=3*1024*1024; // localStorage 용량 보호 상한(대략 3MB)
+
+function loadLocalHistory(){
+  let arr; try{ arr=JSON.parse(store.get(HIST_KEY)||'[]'); }catch{ arr=[]; }
+  if(!Array.isArray(arr)) arr=[];
+  const now=Date.now();
+  arr=arr.filter(e=> e && typeof e.savedAt==='number' && (now-e.savedAt)<HIST_MAX_AGE_MS ); // 2일 지난 것 제거
+  let total=JSON.stringify(arr).length;
+  while(arr.length && (arr.length>HIST_MAX_COUNT || total>HIST_MAX_BYTES)){ arr.pop(); total=JSON.stringify(arr).length; } // 용량/개수 상한
+  store.set(HIST_KEY, JSON.stringify(arr));
+  return arr;
+}
+function pushLocalHistory(plan){
+  const arr=loadLocalHistory();
+  arr.unshift({ id:'local:'+Date.now()+'-'+Math.random().toString(36).slice(2,8), title:plan.title||'여행 일정', savedAt:Date.now(), plan });
+  store.set(HIST_KEY, JSON.stringify(arr));
+  loadLocalHistory();
+}
+function removeLocalHistory(id){
+  const arr=loadLocalHistory().filter(e=>e.id!==id);
+  store.set(HIST_KEY, JSON.stringify(arr));
+}
+function timeAgo(ts){
+  if(!ts) return '';
+  const diff=Date.now()-ts, h=Math.floor(diff/3600000);
+  if(h<1) return Math.max(1,Math.floor(diff/60000))+'분 전';
+  if(h<24) return h+'시간 전';
+  return Math.floor(h/24)+'일 전';
+}
+function listUrl(worker, qs){ return worker+(worker.includes('?')?'&':'?')+qs; }
+
+async function renderHistory(){
+  const wrap=$('#histWrap'), list=$('#histList');
+  let items=[], source='local';
+  const worker=store.get('ykh_worker');
+  if(worker){
+    try{
+      const res=await fetch(listUrl(worker,'list=1'));
+      const data=await res.json();
+      if(data.kvEnabled && Array.isArray(data.items)){ items=data.items; source='server'; }
+    }catch(e){ /* 서버 목록 실패시 로컬로 대체 */ }
+  }
+  if(source==='local'){ items=loadLocalHistory().map(e=>({id:e.id, title:e.title, savedAt:e.savedAt, _local:true})); }
+  if(!items.length){ wrap.style.display='none'; return; }
+  wrap.style.display='block';
+  list.innerHTML=items.map(it=>`
+    <div class="histitem" data-id="${esc(it.id)}" data-local="${it._local?'1':'0'}">
+      <span class="hi-title">${esc(it.title)}</span>
+      <span class="hi-time">${timeAgo(it.savedAt)}</span>
+      <button type="button" class="hi-del" title="목록에서 지우기">✕</button>
+    </div>`).join('') || '<div class="histempty">아직 없어요.</div>';
+}
+
 /* ---------- render ---------- */
 const TAG={nature:['자연','t-nature'],view:['전망대','t-view'],activity:['액티비티','t-activity'],food:['식당','t-food'],hotel:['호텔','t-hotel'],car:['렌트카','t-car'],culture:['문화','t-culture'],shop:['쇼핑','t-shop'],move:['이동','t-move']};
 function esc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
@@ -465,7 +540,7 @@ function render(plan){
       <div><h2 class="r-title">${esc(plan.title||'여행 일정')}</h2>${plan.summary?`<p class="r-sum">${esc(plan.summary)}</p>`:''}</div>
     </div>
     <div class="dlbar">
-      <button class="dl" id="docBtn">📄 DOC 파일 다운로드</button>
+      <button class="dl" id="docBtn">📄 문서 파일 다운로드 (.rtf)</button>
       <button class="iconbtn" id="copyBtn">텍스트 복사</button>
       <button class="iconbtn" id="printBtn">인쇄·PDF</button>
     </div>
@@ -512,56 +587,78 @@ function render(plan){
   out.scrollIntoView({behavior:'smooth', block:'start'});
 }
 
-/* ---------- DOC 파일 생성 ---------- */
-function buildDocHtml(p){
+/* ---------- RTF 파일 생성 (진짜 RTF 표준 — Word·한글(HWP)·구글독스 전부 정식 지원) ---------- */
+function rtfEscape(s){
+  s=(s==null?'':String(s));
+  let out='';
+  for(const ch of s){
+    const code=ch.codePointAt(0);
+    if(ch==='\\'||ch==='{'||ch==='}'){ out+='\\'+ch; }
+    else if(code===10){ out+='\\par\n'; }
+    else if(code<128){ out+=ch; }
+    else if(code>0xFFFF){
+      const c=code-0x10000;
+      let hi=0xD800+(c>>10), lo=0xDC00+(c&0x3FF);
+      if(hi>32767) hi-=65536;
+      out+='\\u'+hi+'?\\u'+(lo>32767?lo-65536:lo)+'?';
+    } else {
+      out+='\\u'+(code>32767?code-65536:code)+'?';
+    }
+  }
+  return out;
+}
+function buildRtfDoc(p){
   const TY={nature:'자연',view:'전망대',activity:'액티비티',food:'식당',hotel:'호텔',car:'렌트카',culture:'문화',shop:'쇼핑',move:'이동'};
-  let b=`<h1 style="font-size:20pt;color:#204A3C;margin:0 0 4pt">${esc(p.title||'여행 일정')}</h1>`;
-  if(p.summary) b+=`<p style="color:#555;margin:0 0 10pt">${esc(p.summary)}</p>`;
+  let b='';
+  b+='\\pard\\b\\fs36 '+rtfEscape(p.title||'여행 일정')+'\\b0\\fs20\\par\n';
+  if(p.summary) b+='\\i '+rtfEscape(p.summary)+'\\i0\\par\n';
+  b+='\\par\n';
   if(p.rentalCar && p.rentalCar.company){
     const rc=p.rentalCar;
-    b+=`<table width="100%" style="border-collapse:collapse;margin:0 0 12pt;background:#f2f6f2"><tr><td style="padding:8pt;border:1pt solid #cdd6cd">
-        <b>🚗 렌트카 추천:</b> ${esc(rc.company||'')}${rc.reason?` — ${esc(rc.reason)}`:''}<br>
-        ${rc.pickup?`픽업: ${esc(rc.pickup)}　`:''}${rc.dropoff?`반납: ${esc(rc.dropoff)}`:''}</td></tr></table>`;
+    b+='\\b [렌트카 추천] '+rtfEscape(rc.company)+'\\b0\\par\n';
+    if(rc.reason) b+=rtfEscape(rc.reason)+'\\par\n';
+    if(rc.pickup||rc.dropoff) b+=rtfEscape('픽업: '+(rc.pickup||'')+'   반납: '+(rc.dropoff||''))+'\\par\n';
+    b+='\\par\n';
   }
   if(p._meta && p._meta.warnings && p._meta.warnings.length){
-    b+=`<table width="100%" style="border-collapse:collapse;margin:0 0 12pt;background:#fbf3e5"><tr><td style="padding:8pt;border:1pt solid #e6d5ab">
-        <b>⚠️ 검증 단계 발견 사항:</b><br>${p._meta.warnings.map(w=>esc(w)).join('<br>')}</td></tr></table>`;
+    b+='\\b [검증 단계 발견 사항]\\b0\\par\n';
+    p._meta.warnings.forEach(w=>{ b+=rtfEscape('- '+w)+'\\par\n'; });
+    b+='\\par\n';
   }
   (p.days||[]).forEach(d=>{
-    b+=`<h2 style="font-size:13pt;color:#fff;background:#204A3C;padding:5pt 8pt;margin:12pt 0 0">${esc(d.date||'')}　${esc(d.label||'')}${typeof d.driveMinutes==='number'?`　<span style="font-size:9pt;font-weight:normal">🚗 총 운전 약 ${Math.round(d.driveMinutes)}분</span>`:''}</h2>`;
+    b+='\\par\\b\\fs26 '+rtfEscape((d.date||'')+'   '+(d.label||''))+'\\b0\\fs20\\par\n';
     if(d.hotel && d.hotel.name){
-      const ht=d.hotel;
-      b+=`<p style="margin:4pt 0;padding:4pt 8pt;background:#efeaf5"><b>🏨 숙소:</b> ${esc(ht.name)}${ht.verified?' ✓':''}${ht.note?` · ${esc(ht.note)}`:''}${hasCoord(ht)?` · 위경도 ${coordStr(ht)} · <a href="${mapsLink(ht)}">지도</a>`:''}</p>`;
+      let line='숙소: '+d.hotel.name+(d.hotel.verified?' (검증됨)':'')+(d.hotel.note?' - '+d.hotel.note:'');
+      if(hasCoord(d.hotel)) line+='  ['+coordStr(d.hotel)+']';
+      b+='\\i '+rtfEscape(line)+'\\i0\\par\n';
     }
-    b+=`<table width="100%" style="border-collapse:collapse;margin:4pt 0 0;font-size:10.5pt">
-      <tr style="background:#e8ede8"><td width="12%" style="border:1pt solid #cdd6cd;padding:4pt"><b>시간</b></td><td width="10%" style="border:1pt solid #cdd6cd;padding:4pt"><b>구분</b></td><td width="34%" style="border:1pt solid #cdd6cd;padding:4pt"><b>장소·활동</b></td><td width="22%" style="border:1pt solid #cdd6cd;padding:4pt"><b>위경도(지도)</b></td><td style="border:1pt solid #cdd6cd;padding:4pt"><b>메모</b></td></tr>`;
+    if(typeof d.driveMinutes==='number'){
+      b+=rtfEscape('총 운전시간 약 '+Math.round(d.driveMinutes)+'분'+(d.warning?'  - 주의: '+d.warning:''))+'\\par\n';
+    }
     (d.items||[]).forEach(it=>{
-      const loc=hasCoord(it)?`${coordStr(it)}<br><a href="${mapsLink(it)}">지도 열기</a>`:'';
-      b+=`<tr>
-        <td style="border:1pt solid #cdd6cd;padding:4pt;font-family:monospace">${esc(it.time||'')}</td>
-        <td style="border:1pt solid #cdd6cd;padding:4pt">${TY[it.type]||''}</td>
-        <td style="border:1pt solid #cdd6cd;padding:4pt">${esc(it.title||'')}${it.verified?' ✓':''}</td>
-        <td style="border:1pt solid #cdd6cd;padding:4pt;font-size:9pt">${loc}</td>
-        <td style="border:1pt solid #cdd6cd;padding:4pt;font-size:9.5pt;color:#555">${esc(it.note||'')}</td></tr>`;
+      let line=(it.time||'')+'  ['+(TY[it.type]||'')+']  '+(it.title||'')+(it.verified?' (검증됨)':'');
+      if(it.note) line+=' - '+it.note;
+      if(hasCoord(it)) line+='  ['+coordStr(it)+']';
+      b+='\\tab '+rtfEscape(line)+'\\par\n';
     });
-    b+=`</table>`;
   });
-  if(p.tips&&p.tips.length){
-    b+=`<h2 style="font-size:12pt;color:#204A3C;margin:14pt 0 4pt">챙길 것 · 팁</h2><ul>${p.tips.map(t=>`<li>${esc(t)}</li>`).join('')}</ul>`;
+  if(p.tips && p.tips.length){
+    b+='\\par\\b [챙길 것 · 팁]\\b0\\par\n';
+    p.tips.forEach(t=>{ b+=rtfEscape('- '+t)+'\\par\n'; });
   }
-  b+=`<p style="color:#999;font-size:8.5pt;margin-top:16pt">※ ✓ 표시는 실제 지도 API로 좌표를 검증한 항목입니다. 표시 없는 항목은 AI 추정치이니 확인하세요. · YKH 여정 설계소</p>`;
-  return `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="utf-8"><title>${esc(p.title||'여행 일정')}</title></head><body style="font-family:'맑은 고딕','Malgun Gothic',sans-serif;font-size:11pt;line-height:1.5">${b}</body></html>`;
+  b+='\\par\\fs16 '+rtfEscape('(검증됨) 표시는 실제 지도 API로 좌표를 확인한 항목입니다. 표시 없는 항목은 AI 추정치이니 확인하세요.')+'\\fs20\\par\n';
+  return '{\\rtf1\\ansi\\ansicpg949\\deff0\\deflang1042{\\fonttbl{\\f0\\fnil\\fcharset129 Malgun Gothic;}}\\f0\\fs20\n'+b+'}';
 }
 function safeName(s){ return (s||'여행일정').replace(/[\\/:*?"<>|]/g,' ').replace(/\s+/g,'_').slice(0,60); }
 function downloadDoc(){
-  const html=buildDocHtml(LAST);
-  const blob=new Blob(['\ufeff'+html], {type:'application/msword'});
+  const rtf=buildRtfDoc(LAST);
+  const blob=new Blob([rtf], {type:'application/rtf'});
   const url=URL.createObjectURL(blob);
   const a=document.createElement('a');
-  a.href=url; a.download=safeName(LAST.title)+'.doc';
+  a.href=url; a.download=safeName(LAST.title)+'.rtf';
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(url), 1500);
-  flash('DOC 파일을 내려받았어요.');
+  flash('문서 파일을 내려받았어요 (Word·한글 모두 열립니다).');
 }
 
 function planToText(p){
@@ -594,6 +691,8 @@ $('#go').addEventListener('click', async ()=>{
   try{
     const plan=await callBrain(buildRequestPayload());
     render(plan);
+    pushLocalHistory(plan);
+    renderHistory();
     $('#msg').className='msg';
   }catch(err){
     console.error(err);
@@ -603,6 +702,33 @@ $('#go').addEventListener('click', async ()=>{
     go.classList.remove('loading'); go.disabled=false; label.textContent=old;
   }
 });
+
+/* ---------- 최근 만든 일정: 클릭해서 불러오기 / 삭제 ---------- */
+$('#histRefresh').addEventListener('click', renderHistory);
+$('#histList').addEventListener('click', async (e)=>{
+  const del=e.target.closest('.hi-del');
+  const item=e.target.closest('.histitem');
+  if(!item) return;
+  const id=item.dataset.id, isLocal=item.dataset.local==='1';
+  if(del){
+    if(isLocal){ removeLocalHistory(id); renderHistory(); }
+    else flash('서버 저장 항목은 2일 뒤 자동 삭제됩니다.');
+    return;
+  }
+  try{
+    if(isLocal){
+      const found=loadLocalHistory().find(x=>x.id===id);
+      if(found){ render(found.plan); flash('불러왔어요.'); }
+    } else {
+      const worker=store.get('ykh_worker');
+      const res=await fetch(listUrl(worker,'id='+encodeURIComponent(id)));
+      const data=await res.json();
+      if(data.error) throw new Error(data.error);
+      render(data); flash('불러왔어요.');
+    }
+  }catch(err){ showErr('불러오기 실패: '+esc(err.message||String(err))); }
+});
+renderHistory(); // 페이지 열릴 때 최근 일정 목록 표시
 </script>
 </body>
 </html>
