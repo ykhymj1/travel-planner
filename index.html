@@ -552,7 +552,7 @@ async function renderHistory(){
 const TAG={nature:['자연','t-nature'],view:['전망대','t-view'],activity:['액티비티','t-activity'],food:['식당','t-food'],hotel:['호텔','t-hotel'],car:['렌트카','t-car'],culture:['문화','t-culture'],shop:['쇼핑','t-shop'],move:['이동','t-move']};
 function esc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function hasCoord(o){ return o && typeof o.lat==='number' && typeof o.lng==='number' && !(o.lat===0&&o.lng===0); }
-function coordStr(o){ return o.lat.toFixed(5)+', '+o.lng.toFixed(5); }
+function coordStr(o){ return o.lat.toFixed(6)+', '+o.lng.toFixed(6); }
 function mapsLink(o){ return 'https://www.google.com/maps/search/?api=1&query='+o.lat+','+o.lng; }
 
 let LAST=null;
