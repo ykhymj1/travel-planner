@@ -1,57 +1,88 @@
-/* YKH 여정 설계소 — Service Worker
-   오프라인에서도 앱 껍데기가 열리게 캐싱.
-   실제 일정 생성은 Worker 서버가 필요하므로 오프라인엔 안내 표시. */
+/* YKH 여정 설계소 — Service Worker v2
+   캐시 전략: 앱 껍데기(HTML/아이콘/폰트)만 캐싱 → 오프라인에서도 앱 열림
+   Worker API 호출(일정 생성)은 항상 서버로, 캐시 안 함 */
 
-const CACHE = 'ykh-travel-v1';
-const PRECACHE = [
-  '/travel-planner/',
-  '/travel-planner/index.html',
-  '/travel-planner/manifest.json',
-  '/travel-planner/icons/icon-192.png',
-  '/travel-planner/icons/icon-512.png',
+const CACHE_NAME = 'ykh-travel-v2';
+const PRECACHE_URLS = [
+  './',
+  './index.html',
+  './manifest.json',
+  './icons/icon-192.png',
+  './icons/icon-512.png',
   'https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css',
 ];
 
-self.addEventListener('install', e => {
+/* ──────────────── install: 핵심 파일 사전 캐싱 ──────────────── */
+self.addEventListener('install', (e) => {
   e.waitUntil(
-    caches.open(CACHE).then(c => c.addAll(PRECACHE)).then(() => self.skipWaiting())
+    caches.open(CACHE_NAME)
+      .then((cache) => cache.addAll(PRECACHE_URLS))
+      .then(() => self.skipWaiting())
+      .catch((err) => console.warn('[SW] precache 일부 실패 (무시됨):', err))
   );
 });
 
-self.addEventListener('activate', e => {
+/* ──────────────── activate: 이전 캐시 정리 ──────────────── */
+self.addEventListener('activate', (e) => {
   e.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
-    ).then(() => self.clients.claim())
+    caches.keys()
+      .then((keys) => Promise.all(
+        keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k))
+      ))
+      .then(() => self.clients.claim())
   );
 });
 
-self.addEventListener('fetch', e => {
-  const url = new URL(e.request.url);
-  // Cloudflare Worker 호출은 캐시 안 함 (항상 서버로)
-  if (url.hostname.endsWith('.workers.dev')) return;
-  // 외부 API도 캐시 안 함
-  if (url.hostname !== self.location.hostname) {
+/* ──────────────── fetch: 요청 가로채기 ──────────────── */
+self.addEventListener('fetch', (e) => {
+  const { request } = e;
+  const url = new URL(request.url);
+
+  /* 1. Cloudflare Worker (일정 생성 API) — 항상 네트워크 직접 호출 */
+  if (url.hostname.endsWith('.workers.dev')) {
     e.respondWith(
-      fetch(e.request).catch(() =>
-        new Response('{"error":"오프라인 상태입니다. 네트워크를 확인해 주세요."}', {
-          headers: { 'Content-Type': 'application/json' }
-        })
+      fetch(request).catch(() =>
+        new Response(
+          JSON.stringify({ error: '오프라인 상태입니다. 네트워크를 확인해 주세요.' }),
+          { status: 503, headers: { 'Content-Type': 'application/json' } }
+        )
       )
     );
     return;
   }
-  // 앱 자체 파일은 캐시 우선 → 네트워크 예비
+
+  /* 2. 외부 CDN(폰트 등) — 캐시 우선, 없으면 네트워크 */
+  if (url.origin !== self.location.origin) {
+    e.respondWith(
+      caches.match(request).then((cached) => {
+        if (cached) return cached;
+        return fetch(request).then((res) => {
+          if (res && res.ok) {
+            const clone = res.clone();
+            caches.open(CACHE_NAME).then((c) => c.put(request, clone));
+          }
+          return res;
+        }).catch(() => cached || new Response('', { status: 408 }));
+      })
+    );
+    return;
+  }
+
+  /* 3. 앱 자체 파일 — 캐시 우선, 없으면 네트워크 후 캐시 저장 */
   e.respondWith(
-    caches.match(e.request).then(cached => {
+    caches.match(request).then((cached) => {
       if (cached) return cached;
-      return fetch(e.request).then(res => {
-        if (res && res.status === 200 && res.type !== 'opaque') {
+      return fetch(request).then((res) => {
+        if (res && res.ok && request.method === 'GET') {
           const clone = res.clone();
-          caches.open(CACHE).then(c => c.put(e.request, clone));
+          caches.open(CACHE_NAME).then((c) => c.put(request, clone));
         }
         return res;
-      }).catch(() => caches.match('/travel-planner/'));
+      }).catch(() =>
+        /* 오프라인에서 앱 요청 실패 시 index.html로 폴백 */
+        caches.match('./index.html') ||
+        caches.match('./')
+      );
     })
   );
 });
