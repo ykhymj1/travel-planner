@@ -1,0 +1,42 @@
+{
+  "name": "YKH 여정 설계소",
+  "short_name": "YKH 여행",
+  "description": "항공편만 넣으면 내 스타일 여행 일정을 DOC로 뽑아드려요",
+  "start_url": "/travel-planner/",
+  "scope": "/travel-planner/",
+  "display": "standalone",
+  "background_color": "#204A3C",
+  "theme_color": "#204A3C",
+  "orientation": "portrait-primary",
+  "lang": "ko",
+  "categories": ["travel", "productivity"],
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-512-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "새 일정 만들기",
+      "short_name": "새 일정",
+      "description": "여행 일정 새로 만들기",
+      "url": "/travel-planner/?action=new",
+      "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}
