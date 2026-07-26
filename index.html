@@ -288,7 +288,7 @@
   <!-- RESULT -->
   <section id="out"></section>
 
-  <footer>학습 기반: 히로시마·삿포로·오키나와·가고시마·후지산·교토·오사카근교·미야자키·아마미오시마 · 오스트리아·프랑스남부·스페인·프라하·돌로미티·아이슬란드·콜로라도·멕시코 여행 일정</footer>
+  <footer>학습 기반: 히로시마·삿포로·오키나와·가고시마·후지산·교토·오사카근교·미야자키·아마미오시마 · 오스트리아·프랑스남부·스페인·프라하·돌로미티·아이슬란드·콜로라도·멕시코 여행 일정<br><span id="appVersion" style="opacity:.6">버전 확인 중…</span></footer>
 </div>
 
 <!-- STYLE MODAL -->
@@ -879,14 +879,55 @@ $('#histList').addEventListener('click', async (e)=>{
 });
 renderHistory(); // 페이지 열릴 때 최근 일정 목록 표시
 
-/* ---------- PWA: 서비스 워커 등록 ---------- */
+/* ---------- PWA: 앱 버전 표시 ----------
+   sw.js의 CACHE_NAME(예: 'ykh-travel-v3')과 항상 같은 v번호로 맞춰서 올리세요.
+   화면 맨 아래 버전이 배포 후 바뀌었으면 새 코드가 실제로 반영된 것이고,
+   그대로면 브라우저/SW 캐시가 옛 파일을 물고 있다는 뜻입니다. */
+const APP_VERSION = 'v3';
+document.getElementById('appVersion').textContent = 'YKH 여정 설계소 ' + APP_VERSION;
+
+/* ---------- PWA: 서비스 워커 등록 + 업데이트 감지 ---------- */
 /* Claude 아티팩트 미리보기(claudeusercontent.com)에는 sw.js가 없어 항상 404 —
-   실제 배포 도메인(github.io 등)에서만 등록 시도해서 불필요한 콘솔 오류 방지 */
+   실제 배포 도메인(github.io 등)에서만 등록 시도해서 불필요한 콘솔 오류 방지.
+   ※ 방금 보신 "SW 등록 실패 ... 404 (claudeusercontent.com)" 콘솔 오류는 바로 이 케이스입니다.
+     이 코드가 이미 미리보기 도메인을 걸러내므로, 실제 GitHub Pages/Netlify 등에 올리면
+     그 오류는 나타나지 않습니다. 로컬에서 file://로 직접 열어도 마찬가지로 건너뜁니다. */
 const isPreviewSandbox = /claudeusercontent\.com$/.test(location.hostname) || location.protocol === 'file:';
 if('serviceWorker' in navigator && !isPreviewSandbox){
   window.addEventListener('load', ()=>{
-    navigator.serviceWorker.register('sw.js')
-      .catch(e=>console.log('SW 등록 실패:', e));
+    navigator.serviceWorker.register('sw.js').then(reg=>{
+      // 이미 새 버전이 설치된 채 대기 중인 경우(예: 방금 배포 직후 재방문)
+      if(reg.waiting) showUpdateBanner(reg);
+      reg.addEventListener('updatefound', ()=>{
+        const nw=reg.installing;
+        if(!nw) return;
+        nw.addEventListener('statechange', ()=>{
+          if(nw.state==='installed' && navigator.serviceWorker.controller){
+            showUpdateBanner(reg); // 새 버전이 설치 완료되어 대기 중 → 사용자에게 안내
+          }
+        });
+      });
+    }).catch(e=>console.log('SW 등록 실패:', e));
+
+    // 새 SW가 활성화되면(스킵웨이팅 후) 자동 새로고침 — 1회만
+    let refreshing=false;
+    navigator.serviceWorker.addEventListener('controllerchange', ()=>{
+      if(refreshing) return; refreshing=true; location.reload();
+    });
+  });
+}
+function showUpdateBanner(reg){
+  if(document.getElementById('updateBar')) return;
+  const bar=document.createElement('div');
+  bar.id='updateBar';
+  bar.style.cssText='position:fixed;bottom:0;left:0;right:0;background:#204A3C;color:#fff;padding:14px 16px;display:flex;align-items:center;gap:12px;z-index:1000;font-family:inherit;font-size:14px;';
+  bar.innerHTML=`<span style="flex:1">새 버전이 나왔어요 (현재 화면: ${APP_VERSION})</span>
+    <button id="updateNowBtn" style="background:#E6BE84;color:#204A3C;border:0;border-radius:10px;padding:10px 16px;font-weight:800;cursor:pointer;font-size:13px">지금 업데이트</button>`;
+  document.body.appendChild(bar);
+  document.getElementById('updateNowBtn').addEventListener('click', ()=>{
+    const w = reg.waiting;
+    if(w) w.postMessage({ type:'SKIP_WAITING' });
+    bar.remove();
   });
 }
 
