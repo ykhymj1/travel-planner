@@ -479,11 +479,29 @@ function buildRequestPayload(){
 async function callBrain(payload){
   const worker=store.get('ykh_worker');
   if(!worker){ throw new Error('먼저 ⚙︎ Worker 연결 설정에서 Worker 주소를 넣어주세요. 지도 API·검증 단계는 브라우저에서 직접 호출할 수 없어요.'); }
-  const res = await fetch(worker, {
-    method:"POST",
-    headers:{"Content-Type":"application/json"},
-    body: JSON.stringify(payload)
-  });
+
+  // 90초 타임아웃 — Worker가 응답 없이 멈추는 경우 무한 대기 방지
+  const controller = new AbortController();
+  const TIMEOUT_MS = 90000;
+  const timer = setTimeout(()=>controller.abort(), TIMEOUT_MS);
+
+  let res;
+  try{
+    res = await fetch(worker, {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify(payload),
+      signal: controller.signal
+    });
+  }catch(err){
+    if(err.name==='AbortError'){
+      throw new Error('90초 넘게 응답이 없어 중단했어요. Worker가 멈췄거나 API가 응답 지연 중일 수 있어요. Cloudflare Observability 로그를 확인해 주세요.');
+    }
+    throw new Error('Worker에 연결할 수 없어요: '+(err.message||String(err)));
+  }finally{
+    clearTimeout(timer);
+  }
+
   const raw = await res.text();
   let data;
   try{ data=JSON.parse(raw); }catch{ throw new Error('Worker 응답이 JSON이 아니에요 (상태 '+res.status+'): '+raw.slice(0,200)); }
@@ -751,8 +769,13 @@ $('#go').addEventListener('click', async ()=>{
   const go=$('#go'); go.classList.add('loading'); go.disabled=true;
   const label=go.querySelector('.go-label'); const old=label.textContent;
   const stages=['초안 생성 중… (Gemini/Claude)','실제 장소·좌표 검증 중…','동선·운전시간 계산 중…','최종 검수 중…'];
-  let si=0; label.textContent=stages[0];
-  const stageTimer=setInterval(()=>{ si=(si+1)%stages.length; label.textContent=stages[si]+' (최대 2~3분)'; }, 6000);
+  let si=0, elapsed=0; label.textContent=stages[0];
+  const stageTimer=setInterval(()=>{
+    elapsed+=6;
+    si=(si+1)%stages.length;
+    if(elapsed>=60) label.textContent=stages[si]+` (${elapsed}초째 — 곧 타임아웃, 잠시만요)`;
+    else label.textContent=stages[si]+` (${elapsed}초 경과, 최대 90초)`;
+  }, 6000);
   try{
     const plan=await callBrain(buildRequestPayload());
     render(plan);
@@ -796,7 +819,10 @@ $('#histList').addEventListener('click', async (e)=>{
 renderHistory(); // 페이지 열릴 때 최근 일정 목록 표시
 
 /* ---------- PWA: 서비스 워커 등록 ---------- */
-if('serviceWorker' in navigator){
+/* Claude 아티팩트 미리보기(claudeusercontent.com)에는 sw.js가 없어 항상 404 —
+   실제 배포 도메인(github.io 등)에서만 등록 시도해서 불필요한 콘솔 오류 방지 */
+const isPreviewSandbox = /claudeusercontent\.com$/.test(location.hostname) || location.protocol === 'file:';
+if('serviceWorker' in navigator && !isPreviewSandbox){
   window.addEventListener('load', ()=>{
     navigator.serviceWorker.register('sw.js')
       .catch(e=>console.log('SW 등록 실패:', e));
