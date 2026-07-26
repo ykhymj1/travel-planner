@@ -509,6 +509,54 @@ async function callBrain(payload){
   return data;
 }
 
+/* ---------- 긴 여행(예: 7~30일)을 며칠 단위로 쪼개 순차 호출 ----------
+   Cloudflare Workers 무료 플랜은 "요청 1건당 외부 subrequest 50개"가 한도입니다.
+   하루 8~9곳 전부를 실제 구글 좌표로 검증하려면, 요청 1건에 너무 많은 날짜를
+   몰아넣지 말고 며칠씩 나눠 여러 번 호출해야 매일 "모든" 장소가 검증됩니다.
+   CHUNK_DAYS=3이면 한 번의 Worker 호출에서 하루 8~9곳 × 3일 ≈ 24~27곳까지
+   전부 검증 여유가 생깁니다(LLM 2회 + 여유분 제외 후 약 40여 개 예산). */
+const CHUNK_DAYS = 3;
+
+function chunkDates(dates, size){
+  const out=[];
+  for(let i=0;i<dates.length;i+=size) out.push(dates.slice(i,i+size));
+  return out;
+}
+
+/* 다음 청크 생성 시 자연스럽게 이어지도록, 직전 청크의 마지막 숙소/일정/렌트카를 요약 */
+function buildPriorContext(plan){
+  if(!plan || !Array.isArray(plan.days) || !plan.days.length) return '';
+  const last=plan.days[plan.days.length-1];
+  const items=last.items||[];
+  const lastItem=items[items.length-1];
+  const lines=[];
+  if(last.hotel && last.hotel.name) lines.push(`직전 마지막 숙소: ${last.hotel.name}`);
+  if(lastItem) lines.push(`직전 마지막 일정(${last.date} ${lastItem.time||''}): ${lastItem.title||''}`);
+  if(plan.rentalCar && plan.rentalCar.company) lines.push(`이용 중인 렌트카: ${plan.rentalCar.company}(반납 예정지: ${plan.rentalCar.dropoff||'미정'})`);
+  return lines.join('\n');
+}
+
+/* 청크별로 callBrain을 순차 호출해 병합. onProgress(현재청크, 전체청크수)로 진행상황 콜백. */
+async function callBrainChunked(basePayload, allDates, onProgress){
+  const chunks=chunkDates(allDates, CHUNK_DAYS);
+  let merged=null, priorContext='';
+  for(let i=0;i<chunks.length;i++){
+    if(onProgress) onProgress(i+1, chunks.length);
+    const part=await callBrain({...basePayload, dates:chunks[i], priorContext});
+    if(!merged){
+      merged=part;
+    }else{
+      merged.days=(merged.days||[]).concat(part.days||[]);
+      merged.tips=[...new Set([...(merged.tips||[]), ...(part.tips||[])])].slice(0,12);
+      const w1=(merged._meta&&merged._meta.warnings)||[];
+      const w2=(part._meta&&part._meta.warnings)||[];
+      merged._meta={...(merged._meta||{}), warnings:[...w1,...w2], totalDays:(merged.days||[]).length};
+    }
+    priorContext=buildPriorContext(merged);
+  }
+  return merged;
+}
+
 /* ---------- 최근 만든 일정 (2일 보관 — Worker KV 설정시 서버, 아니면 로컬 저장) ---------- */
 const HIST_KEY='ykh_history';
 const HIST_MAX_AGE_MS=2*24*60*60*1000; // 2일
@@ -571,8 +619,10 @@ const TAG={nature:['자연','t-nature'],view:['전망대','t-view'],activity:['�
 function esc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function hasCoord(o){ return o && typeof o.lat==='number' && typeof o.lng==='number' && !(o.lat===0&&o.lng===0); }
 function coordStr(o){
-  // JavaScript toString()이 부동소수점 내부값을 정확히 최단 표현 — 구글맵과 동일한 자릿수
-  return o.lat.toString() + ', ' + o.lng.toString();
+  // 구글 지도가 실제로 갖는 정밀도는 소수점 6~7자리(약 1cm) 수준입니다.
+  // 그 이상 자릿수(예: 62.57493579999999)는 실제 정밀도가 아니라
+  // IEEE754 부동소수점 저장/연산 과정에서 생기는 표현 오차이므로 7자리로 고정해 보여줍니다.
+  return o.lat.toFixed(7) + ', ' + o.lng.toFixed(7);
 }
 function mapsLink(o){ return 'https://www.google.com/maps/search/?api=1&query='+o.lat+','+o.lng; }
 
@@ -769,15 +819,26 @@ $('#go').addEventListener('click', async ()=>{
   const go=$('#go'); go.classList.add('loading'); go.disabled=true;
   const label=go.querySelector('.go-label'); const old=label.textContent;
   const stages=['초안 생성 중… (Gemini/Claude)','실제 장소·좌표 검증 중…','동선·운전시간 계산 중…','최종 검수 중…'];
-  let si=0, elapsed=0; label.textContent=stages[0];
+  let si=0, elapsed=0, chunkNote=''; label.textContent=stages[0];
   const stageTimer=setInterval(()=>{
     elapsed+=6;
     si=(si+1)%stages.length;
-    if(elapsed>=220) label.textContent=stages[si]+` (${elapsed}초째 — 곧 타임아웃, 잠시만요)`;
-    else label.textContent=stages[si]+` (${elapsed}초 경과, 정확성 위해 전체 일수 검증 중 · 최대 270초)`;
+    const base=stages[si]+chunkNote;
+    if(elapsed>=220) label.textContent=base+` (${elapsed}초째 — 곧 타임아웃, 잠시만요)`;
+    else label.textContent=base+` (${elapsed}초 경과 · 최대 270초/구간)`;
   }, 6000);
   try{
-    const plan=await callBrain(buildRequestPayload());
+    const basePayload=buildRequestPayload();
+    const allDates=(PERIOD&&PERIOD.dates)||[];
+    let plan;
+    if(allDates.length>CHUNK_DAYS){
+      plan=await callBrainChunked(basePayload, allDates, (cur,total)=>{
+        chunkNote=` — ${cur}/${total}구간(며칠씩 나눠 모든 장소를 검증 중)`;
+        elapsed=0;
+      });
+    }else{
+      plan=await callBrain(basePayload);
+    }
     render(plan);
     pushLocalHistory(plan);
     renderHistory();
