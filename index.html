@@ -21,7 +21,7 @@
 <link rel="shortcut icon" href="icons/favicon.ico" />
 
 <!-- 소셜 미리보기 -->
-<meta name="description" content="항공편만 넣으면 내 스타일 여행 일정을 DOC로 뽑아드려요 — 자연경관·렌트카·도미인·현지 맛집·구글좌표" />
+<meta name="description" content="항공편만 넣으면 내 스타일 여행 일정을 DOC로 뽑아드려요 — 자연경관·렌트카·도미인·현지 맛집·정확한 장소명" />
 <meta property="og:title" content="YKH 여정 설계소" />
 <meta property="og:description" content="항공편만 넣으면 내 스타일 여행 일정 DOC 자동 생성" />
 <meta property="og:image" content="icons/icon-512.png" />
@@ -207,9 +207,27 @@
   .btn-ghost{background:#fff; color:var(--ink-soft)}
 
   footer{margin-top:30px; text-align:center; font-size:11.5px; color:var(--ink-soft)}
+  /* ── 인쇄용 평문 레이아웃 (네비 앱이 그대로 파싱하는 PDF를 바로 생성) ── */
+  #printDoc{display:none}
   @media print{
-    body{background:#fff} .panel, header .brand, .tools, .r-actions, footer, .rule{display:none!important}
-    #out{margin-top:0}
+    body{background:#fff}
+    .panel, header, .tools, .r-actions, footer, .rule, .dlbar, .hint, #histWrap{display:none!important}
+    /* printing 모드: 화면용 결과는 감추고 평문 문서만 인쇄 */
+    body.printing #out{display:none!important}
+    body.printing #printDoc{display:block!important}
+    #printDoc{
+      font-family:'Malgun Gothic','맑은 고딕',Pretendard,sans-serif;
+      font-size:10.5pt; line-height:1.5; color:#000;
+    }
+    #printDoc p{margin:0; padding:0; orphans:2; widows:2}
+    #printDoc .pd-title{font-size:17pt; font-weight:800; margin-bottom:4pt}
+    #printDoc .pd-meta{font-size:10.5pt}
+    #printDoc .pd-date{font-size:13pt; font-weight:800; margin-top:6pt; page-break-after:avoid}
+    #printDoc .pd-head{font-weight:800; margin-top:6pt}
+    #printDoc .pd-item{margin-left:0}
+    #printDoc .pd-note{color:#333; font-style:italic}
+    #printDoc .pd-blank{height:8pt}
+    @page{margin:14mm 15mm}
   }
 </style>
 </head>
@@ -220,13 +238,25 @@
       <span class="mark">YKH · TRAVEL PLANNER</span>
     </div>
     <h1>항공편만 넣으면<br><span class="accent">내 스타일 일정</span>을 DOC로 뽑아드려요.</h1>
-    <p class="sub">자연경관 · 렌트카 회사 추천 · 도미인 등 호텔 · 현지 맛집 · 모든 장소 구글좌표까지 — 다녀온 여행 습관 그대로. 최종 수정해 PDF로 저장하세요.</p>
+    <p class="sub">자연경관 · 렌트카 회사 추천 · 도미인 등 호텔 · 현지 맛집 · 구글 지도 표기 그대로의 정확한 장소명까지 — 다녀온 여행 습관 그대로. 최종 수정해 PDF로 저장하세요.</p>
     <div class="rule"></div>
   </header>
 
   <!-- FORM -->
   <section class="panel" id="form">
     <label class="f">✈️ 왕복 항공권 (확정된 일정을 입력하세요)</label>
+    <label class="addseg" for="ticketFile" style="display:block; text-align:center; margin-bottom:9px; background:#f3f7f2">
+      📷 항공권 이미지/PDF로 자동 채우기 <span style="font-weight:500;color:var(--ink-soft)">(캡처·사진·PDF 업로드 → 구간 자동 인식)</span>
+    </label>
+    <input type="file" id="ticketFile" accept="image/*,.pdf" style="display:none">
+    <div id="ticketFallback" style="display:none; background:#FFF6E5; border:1px solid #E6BE84; border-radius:12px; padding:11px 13px; margin-bottom:9px; font-size:13px; line-height:1.65">
+      <b>항공권을 자동으로 읽지 못했어요.</b><br>
+      아래 칸에 <b>직접 입력</b>하시면 똑같이 일정이 만들어집니다. 날짜·시각·공항만 넣어도 충분하고, 항공사·편명은 알면 적어주세요.
+      <div style="margin-top:8px; display:flex; gap:7px; flex-wrap:wrap">
+        <button type="button" class="link" id="fbRetry" style="padding:5px 10px">📷 다시 인식 시도</button>
+        <button type="button" class="link" id="fbManual" style="padding:5px 10px">✍️ 직접 입력할게요</button>
+      </div>
+    </div>
     <div class="flt-wrap" id="segs"></div>
     <button type="button" class="addseg" id="addSeg">＋ 항공편 추가 <span style="font-weight:500;color:var(--ink-soft)">(경유 1·2박 / 내부선 이동도 한 구간씩)</span></button>
     <p class="hint">비행기 탄 순서대로 넣으세요. 경유지에서 자고 가면 그 구간을 따로 추가하고, 여행 중 다른 지역으로 비행하면 그것도 한 구간으로 추가하면 돼요.</p>
@@ -288,6 +318,9 @@
   <!-- RESULT -->
   <section id="out"></section>
 
+  <!-- 인쇄 전용 평문 문서 (화면에는 안 보임 · PDF 저장 시에만 사용) -->
+  <div id="printDoc"></div>
+
   <footer>학습 기반: 히로시마·삿포로·오키나와·가고시마·후지산·교토·오사카근교·미야자키·아마미오시마 · 오스트리아·프랑스남부·스페인·프라하·돌로미티·아이슬란드·콜로라도·멕시코 여행 일정<br><span id="appVersion" style="opacity:.6">버전 확인 중…</span></footer>
 </div>
 
@@ -308,9 +341,14 @@
 <div class="ov" id="ovConn">
   <div class="sheet">
     <h3>Worker 연결 설정 (필수)</h3>
-    <p>이 앱은 Gemini/Claude + 지도 API 여러 개를 서버(Cloudflare Worker)에서 순서대로 호출해 일정을 검증합니다. 브라우저에서 직접 호출할 수 없어서, <b>Worker 주소가 반드시 필요</b>합니다.</p>
+    <p>이 앱은 <b>Gemini</b> + 지도 API(Google Places · OpenStreetMap · Routes/OSRM)를 서버(Cloudflare Worker)에서 순서대로 호출해 일정을 검증합니다. 브라우저에서 직접 호출할 수 없어서 <b>Worker 주소가 반드시 필요</b>합니다.</p>
     <input id="workerUrl" type="text" placeholder="https://ykh-travel-proxy.xxx.workers.dev" />
-    <p class="hint" style="margin-top:10px">필수 시크릿: <b>GEMINI_API_KEY</b> (또는 ANTHROPIC_API_KEY). 선택: GOOGLE_MAPS_API_KEY, FOURSQUARE_API_KEY — 있으면 호텔·식당 좌표가 더 정확해집니다. worker.js 코드는 채팅에서 받으세요.</p>
+    <p class="hint" style="margin-top:10px">필수 시크릿: <b>GEMINI_API_KEY</b>. 선택: <b>GOOGLE_MAPS_API_KEY</b>(Places API(New) + Routes API 둘 다 Enable) — 있으면 좌표·평점·영업시간까지 검증됩니다. 선택 변수: ENABLE_REDDIT=1, ENABLE_REVIEWS=1</p>
+    <label style="display:flex; align-items:center; gap:9px; margin-top:12px; font-size:13.5px; cursor:pointer">
+      <input type="checkbox" id="coordToggle" style="width:17px;height:17px" />
+      <span>일정표에 <b>좌표 표시</b> (노르웨이 일정표처럼 이름 뒤에 위경도 삽입)</span>
+    </label>
+    <div id="verBox" class="hint" style="margin-top:10px"></div>
     <div class="rowbtn">
       <button class="btn-ghost" data-close>닫기</button>
       <button class="btn-primary" id="saveConn">저장</button>
@@ -394,6 +432,60 @@ $('#addSeg').addEventListener('click', ()=>{ addSeg(''); });
 addSeg('출국');
 addSeg('귀국');
 
+/* 항공권 이미지/PDF 업로드 → Worker가 읽어서 구간을 자동 채움 */
+function fillSegCard(card, s){
+  card.querySelector('.seg-label').value = s.label || '';
+  card.querySelector('.s-depDate').value = s.depDate || '';
+  if(s.depTime){ const [h,m]=s.depTime.split(':'); if(h) card.querySelector('.s-depTimeH').value=h.padStart(2,'0'); if(m) card.querySelector('.s-depTimeM').value=String(Math.round(Number(m)/5)*5).padStart(2,'0'); }
+  card.querySelector('.s-depAir').value = s.depAir || '';
+  card.querySelector('.s-arrDate').value = s.arrDate || '';
+  if(s.arrDate) card.querySelector('.s-arrDate').dataset.touched='1';
+  if(s.arrTime){ const [h,m]=s.arrTime.split(':'); if(h) card.querySelector('.s-arrTimeH').value=h.padStart(2,'0'); if(m) card.querySelector('.s-arrTimeM').value=String(Math.round(Number(m)/5)*5).padStart(2,'0'); }
+  card.querySelector('.s-arrAir').value = s.arrAir || '';
+  card.querySelector('.s-airline').value = s.airline || '';
+}
+$('#ticketFile').addEventListener('change', async (e)=>{
+  const file = e.target.files && e.target.files[0];
+  if(!file) return;
+  const label = document.querySelector('label[for="ticketFile"]');
+  const origText = label.innerHTML;
+  label.innerHTML = '⏳ 항공권 인식 중… (최대 60초)';
+  try{
+    const segs = await extractFlightFromImage(file);
+    if(!segs.length){ flash('항공편 정보를 찾지 못했어요. 이미지가 선명한지 확인해 주세요.'); return; }
+    // 아직 아무것도 입력 안 한 기본 2칸(출국/귀국)이면 비우고 새로 채움, 이미 입력한 게 있으면 뒤에 추가
+    const cards = [...segsEl.querySelectorAll('.flightseg')];
+    const untouched = cards.every(c => !c.querySelector('.s-depDate').value && !c.querySelector('.s-depAir').value.trim());
+    if(untouched) segsEl.innerHTML = '';
+    segs.forEach(s=>{
+      const card = segCard(s.label || '');
+      segsEl.appendChild(card);
+      fillSegCard(card, s);
+    });
+    computePeriod();
+    $('#ticketFallback').style.display='none';
+    flash(`항공편 ${segs.length}개 구간을 채웠어요. 내용을 확인해 주세요.`);
+  }catch(err){
+    // 인식 실패 → 직접 입력 안내 패널을 띄우고, 빈 구간 칸은 그대로 남겨둔다
+    $('#ticketFallback').style.display='block';
+    showErr('항공권 인식 실패: '+(err.message||String(err)));
+    $('#ticketFallback').scrollIntoView({behavior:'smooth', block:'center'});
+  }finally{
+    label.innerHTML = origText;
+    e.target.value = '';
+  }
+});
+
+/* 인식 실패 안내 패널 버튼 */
+$('#fbRetry').addEventListener('click', ()=>{ $('#ticketFile').click(); });
+$('#fbManual').addEventListener('click', ()=>{
+  $('#ticketFallback').style.display='none';
+  $('#msg').className='msg';
+  const first=segsEl.querySelector('.s-depDate');
+  if(first){ first.focus(); segsEl.scrollIntoView({behavior:'smooth', block:'center'}); }
+  flash('아래 칸에 항공편을 직접 입력해 주세요.');
+});
+
 // delegation: delete + date auto-link + recompute
 segsEl.addEventListener('click', e=>{
   const del=e.target.closest('.seg-del'); if(!del)return;
@@ -435,7 +527,11 @@ function computePeriod(){
   const nights=Math.round((e-s)/86400000);
   if(isNaN(nights) || nights<0){ chip.classList.add('warn'); txt.innerHTML='날짜 순서가 이상해요. 항공편 날짜를 확인해 주세요.'; return; }
   const dates=[];
-  for(let i=0;i<=nights;i++){ const d=new Date(s.getTime()+i*86400000); dates.push({date:(d.getMonth()+1)+'/'+d.getDate(), dow:DOW[d.getDay()]}); }
+  for(let i=0;i<=nights;i++){
+    const d=new Date(s.getTime()+i*86400000);
+    const iso=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+    dates.push({date:(d.getMonth()+1)+'/'+d.getDate(), dow:DOW[d.getDay()], iso});
+  }
   PERIOD={nights, days:nights+1, dates, startIso, endIso};
   chip.classList.remove('warn');
   const first=dates[0], last=dates[dates.length-1];
@@ -455,8 +551,32 @@ document.querySelectorAll('.ov').forEach(o=>o.addEventListener('click', e=>{ if(
 
 $('#editStyle').addEventListener('click', ()=>{ $('#styleText').value=store.get('ykh_style'); openOv('#ovStyle'); });
 $('#saveStyle').addEventListener('click', ()=>{ store.set('ykh_style', $('#styleText').value.trim()||DEFAULT_STYLE); closeOv($('#ovStyle')); flash('스타일을 저장했어요.'); });
-$('#editConn').addEventListener('click', ()=>{ $('#workerUrl').value=store.get('ykh_worker')||''; openOv('#ovConn'); });
-$('#saveConn').addEventListener('click', ()=>{ store.set('ykh_worker', $('#workerUrl').value.trim()); closeOv($('#ovConn')); flash('연결 설정을 저장했어요.'); });
+$('#editConn').addEventListener('click', ()=>{
+  $('#workerUrl').value=store.get('ykh_worker')||'';
+  $('#coordToggle').checked = store.get('ykh_coords')!=='0';
+  openOv('#ovConn');
+  checkWorkerVersion();
+});
+$('#saveConn').addEventListener('click', ()=>{
+  store.set('ykh_worker', $('#workerUrl').value.trim());
+  store.set('ykh_coords', $('#coordToggle').checked ? '1' : '0');
+  closeOv($('#ovConn'));
+  flash('연결 설정을 저장했어요.');
+});
+
+/* Worker 쪽 버전·키 설정 상태를 실제로 물어봐서 보여준다 (배포 반영 확인용) */
+async function checkWorkerVersion(){
+  const box=$('#verBox'); const worker=$('#workerUrl').value.trim()||store.get('ykh_worker');
+  if(!worker){ box.textContent='Worker 주소를 넣으면 서버 버전을 확인합니다.'; return; }
+  box.textContent='서버 버전 확인 중…';
+  try{
+    const res=await fetch(listUrl(worker,'version=1'));
+    const d=await res.json();
+    box.innerHTML=`서버 Worker <b>v${esc(d.version||'?')}</b> · 화면 <b>${APP_VERSION}</b><br>`+
+      `LLM: ${esc(d.llm||'-')} · 지도API: ${d.googleMaps?'연결됨':'없음(좌표·평점·영업시간 검증 불가)'}`+
+      `${d.reddit?' · Reddit 켜짐':''}${d.reviews?' · 리뷰원문 켜짐':''}${d.kv?' · KV 보관 켜짐':''}`;
+  }catch(e){ box.textContent='서버 버전 확인 실패: '+(e.message||e); }
+}
 
 function flash(t){ const m=$('#msg'); m.className='msg info'; m.textContent=t; setTimeout(()=>{ if(m.textContent===t) m.className='msg'; }, 2600); }
 function showErr(t){ const m=$('#msg'); m.className='msg err'; m.innerHTML=t; }
@@ -472,18 +592,17 @@ function buildRequestPayload(){
   const style=store.get('ykh_style');
   const segs=readSegs();
   const dates=(PERIOD?PERIOD.dates:[]);
-  return { style, segments:segs, requirements:req, pace, dates };
+  const includeCoords = store.get('ykh_coords') !== '0';
+  return { style, segments:segs, requirements:req, pace, dates, includeCoords };
 }
 
-/* ---------- Worker 호출 (Planner→Researcher→Optimizer→Critic 전체를 서버에서 처리) ---------- */
-async function callBrain(payload){
+/* ---------- Worker 호출 (공용) ---------- */
+async function callWorkerRaw(payload, timeoutMs){
   const worker=store.get('ykh_worker');
   if(!worker){ throw new Error('먼저 ⚙︎ Worker 연결 설정에서 Worker 주소를 넣어주세요. 지도 API·검증 단계는 브라우저에서 직접 호출할 수 없어요.'); }
 
-  // 90초 타임아웃 — Worker가 응답 없이 멈추는 경우 무한 대기 방지
   const controller = new AbortController();
-  const TIMEOUT_MS = 270000; // 정확성 우선: 전체 일수를 예산껏 다 검증하므로 여유있게 설정
-  const timer = setTimeout(()=>controller.abort(), TIMEOUT_MS);
+  const timer = setTimeout(()=>controller.abort(), timeoutMs);
 
   let res;
   try{
@@ -495,7 +614,7 @@ async function callBrain(payload){
     });
   }catch(err){
     if(err.name==='AbortError'){
-      throw new Error('270초 넘게 응답이 없어 중단했어요. Worker가 멈췄거나 API가 응답 지연 중일 수 있어요. Cloudflare Observability 로그를 확인해 주세요.');
+      throw new Error(Math.round(timeoutMs/1000)+'초 넘게 응답이 없어 중단했어요. Worker가 멈췄거나 API가 응답 지연 중일 수 있어요. Cloudflare Observability 로그를 확인해 주세요.');
     }
     throw new Error('Worker에 연결할 수 없어요: '+(err.message||String(err)));
   }finally{
@@ -509,13 +628,34 @@ async function callBrain(payload){
   return data;
 }
 
+/* 일정 생성(Planner→Researcher→Optimizer→Critic 전체를 서버에서 처리) — 정확성 우선, 넉넉한 타임아웃 */
+async function callBrain(payload){
+  return callWorkerRaw(payload, 270000);
+}
+
+/* ---------- 항공권 이미지/PDF → 구간 자동 인식 ---------- */
+function fileToBase64(file){
+  return new Promise((resolve, reject)=>{
+    const r=new FileReader();
+    r.onload=()=>resolve(String(r.result).split(',')[1]||'');
+    r.onerror=()=>reject(new Error('파일을 읽지 못했어요.'));
+    r.readAsDataURL(file);
+  });
+}
+async function extractFlightFromImage(file){
+  const imageBase64 = await fileToBase64(file);
+  const mimeType = file.type || 'image/jpeg';
+  const data = await callWorkerRaw({ action:'extractFlight', imageBase64, mimeType }, 60000);
+  return Array.isArray(data.segments) ? data.segments : [];
+}
+
 /* ---------- 긴 여행(예: 7~30일)을 며칠 단위로 쪼개 순차 호출 ----------
    Cloudflare Workers 무료 플랜은 "요청 1건당 외부 subrequest 50개"가 한도입니다.
    하루 8~9곳 전부를 실제 구글 좌표로 검증하려면, 요청 1건에 너무 많은 날짜를
    몰아넣지 말고 며칠씩 나눠 여러 번 호출해야 매일 "모든" 장소가 검증됩니다.
    CHUNK_DAYS=3이면 한 번의 Worker 호출에서 하루 8~9곳 × 3일 ≈ 24~27곳까지
    전부 검증 여유가 생깁니다(LLM 2회 + 여유분 제외 후 약 40여 개 예산). */
-const CHUNK_DAYS = 3;
+const CHUNK_DAYS = 2;
 
 function chunkDates(dates, size){
   const out=[];
@@ -617,14 +757,8 @@ async function renderHistory(){
 /* ---------- render ---------- */
 const TAG={nature:['자연','t-nature'],view:['전망대','t-view'],activity:['액티비티','t-activity'],food:['식당','t-food'],hotel:['호텔','t-hotel'],car:['렌트카','t-car'],culture:['문화','t-culture'],shop:['쇼핑','t-shop'],move:['이동','t-move']};
 function esc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
-function hasCoord(o){ return o && typeof o.lat==='number' && typeof o.lng==='number' && !(o.lat===0&&o.lng===0); }
-function coordStr(o){
-  // 구글 지도가 실제로 갖는 정밀도는 소수점 6~7자리(약 1cm) 수준입니다.
-  // 그 이상 자릿수(예: 62.57493579999999)는 실제 정밀도가 아니라
-  // IEEE754 부동소수점 저장/연산 과정에서 생기는 표현 오차이므로 7자리로 고정해 보여줍니다.
-  return o.lat.toFixed(7) + ', ' + o.lng.toFixed(7);
-}
-function mapsLink(o){ return 'https://www.google.com/maps/search/?api=1&query='+o.lat+','+o.lng; }
+/* 좌표는 쓰지 않는다 — 정확한 이름 자체가 내비게이션 입력값이 되도록, 이름으로 구글 지도 검색 링크를 만든다. */
+function mapsLinkByName(name){ return 'https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(name); }
 
 let LAST=null;
 function render(plan){
@@ -634,11 +768,11 @@ function render(plan){
       <div><h2 class="r-title">${esc(plan.title||'여행 일정')}</h2>${plan.summary?`<p class="r-sum">${esc(plan.summary)}</p>`:''}</div>
     </div>
     <div class="dlbar">
-      <button class="dl" id="docBtn">📄 문서 파일 다운로드 (.rtf)</button>
+      <button class="dl" id="docBtn">📄 DOC 다운로드 (.rtf)</button>
+      <button class="dl" id="pdfBtn">📕 PDF로 바로 저장</button>
       <button class="iconbtn" id="copyBtn">텍스트 복사</button>
-      <button class="iconbtn" id="printBtn">인쇄·PDF</button>
     </div>
-    <p class="hint" style="margin:8px 2px 0">DOC를 받아 Word/구글독스에서 최종 수정 → PDF로 저장해 여행앱에 올리세요. 좌표는 AI 추정이니 중요한 곳은 확인하세요.</p>`;
+    <p class="hint" style="margin:8px 2px 0"><b>PDF로 바로 저장</b>을 누르면 Word를 거치지 않고 네비 앱이 인식하는 형식(표 없이 한 줄=한 문단)으로 바로 나옵니다. 수정이 필요하면 DOC를 받아 Word에서 고친 뒤 PDF로 저장하세요.</p>`;
 
   if(plan.rentalCar && (plan.rentalCar.company||plan.rentalCar.reason)){
     const rc=plan.rentalCar;
@@ -647,26 +781,34 @@ function render(plan){
       ${rc.reason?`<div class="rc-why">${esc(rc.reason)}</div>`:''}
       <div class="rc-loc">${rc.pickup?`픽업 · ${esc(rc.pickup)}`:''}${rc.dropoff?`　반납 · ${esc(rc.dropoff)}`:''}</div></div>`;
   }
+  if(plan._meta && plan._meta.findings && plan._meta.findings.length){
+    h+=`<div class="warnbox"><b>🔍 실제 데이터로 확인된 사항 (일출·혼잡도·영업시간·운전시간)</b>${plan._meta.findings.map(w=>`· ${esc(w)}`).join('<br>')}</div>`;
+  }
   if(plan._meta && plan._meta.warnings && plan._meta.warnings.length){
-    h+=`<div class="warnbox"><b>⚠️ 검증 단계에서 발견된 사항</b>${plan._meta.warnings.map(w=>`· ${esc(w)}`).join('<br>')}</div>`;
+    h+=`<div class="warnbox"><b>⚠️ 기술적 경고 (검증 실패 등)</b>${plan._meta.warnings.map(w=>`· ${esc(w)}`).join('<br>')}</div>`;
   }
 
   (plan.days||[]).forEach(day=>{
     h+=`<div class="day"><div class="day-head"><span class="day-date">${esc(day.date||'')}</span><span class="day-label">${esc(day.label||'')}</span></div>`;
     if(day.hotel && day.hotel.name){
       const ht=day.hotel;
-      h+=`<div class="hotelbar"><span class="tag t-hotel">숙소</span> <b>${esc(ht.name)}</b>${ht.verified?'<span class="vbadge">✓검증</span>':''}${ht.note?` · <span class="a-note" style="display:inline">${esc(ht.note)}</span>`:''}${hasCoord(ht)?` <a class="mp" href="${mapsLink(ht)}" target="_blank" rel="noopener">📍 ${coordStr(ht)}</a>`:''}</div>`;
+      h+=`<div class="hotelbar"><span class="tag t-hotel">숙소</span> <b>${esc(ht.name)}</b>${ht.verified?'<span class="vbadge">✓구글맵 이름확인</span>':''}${ht.note?` · <span class="a-note" style="display:inline">${esc(ht.note)}</span>`:''}${ht.name?` <a class="mp" href="${mapsLinkByName(ht.name)}" target="_blank" rel="noopener">📍 지도에서 보기</a>`:''}</div>`;
     }
     if(typeof day.driveMinutes==='number'){
       h+=`<div class="drivebar">🚗 이 날 총 운전 약 ${Math.round(day.driveMinutes)}분${day.warning?' · ⚠️ '+esc(day.warning):''}</div>`;
+    }
+    if(day.sun){
+      const s=day.sun;
+      h+=`<div class="drivebar">☀️ ${s.polar? esc(s.polar) : `일출 ${esc(s.sunrise)} · 일몰 ${esc(s.sunset)} · 골든아워 ${esc(s.goldenEve)}~${esc(s.sunset)}`}</div>`;
     }
     h+=`<div class="rail">`;
     (day.items||[]).forEach(it=>{
       const tg=TAG[it.type]||['','t-move'];
       h+=`<div class="row"><div class="t">${esc(it.time||'')}</div><div>
-            <div class="a-title"><span class="tag ${tg[1]}">${tg[0]}</span>${esc(it.title||'')}${it.verified?'<span class="vbadge">✓검증</span>':''}</div>
+            <div class="a-title"><span class="tag ${tg[1]}">${tg[0]}</span>${esc(it.title||'')}${it.verified?'<span class="vbadge">✓구글맵 이름확인</span>':''}</div>
             ${it.note?`<div class="a-note">${esc(it.note)}</div>`:''}
-            ${hasCoord(it)?`<a class="mp" href="${mapsLink(it)}" target="_blank" rel="noopener">📍 ${coordStr(it)}</a>`:''}
+            ${(it.rating||it.hours)?`<div class="a-note">${it.rating?`⭐ ${esc(String(it.rating))}${it.reviewCount?` (${it.reviewCount.toLocaleString()}건)`:''}`:''}${(it.rating&&it.hours)?' · ':''}${it.hours&&it.hours.length?`🕘 ${esc(it.hours[0])}`:''}</div>`:''}
+            ${it.title?`<a class="mp" href="${mapsLinkByName(it.title)}" target="_blank" rel="noopener">📍 지도에서 보기</a>`:''}
           </div></div>`;
     });
     h+=`</div></div>`;
@@ -676,36 +818,88 @@ function render(plan){
   }
   out.innerHTML=h;
   $('#docBtn').addEventListener('click', downloadDoc);
+  $('#pdfBtn').addEventListener('click', printPdf);
   $('#copyBtn').addEventListener('click', copyText);
-  $('#printBtn').addEventListener('click', ()=>window.print());
   out.scrollIntoView({behavior:'smooth', block:'start'});
 }
 
-/* ---------- RTF 파일 생성 (진짜 RTF 표준 — Word·한글(HWP)·구글독스 전부 정식 지원) ---------- */
-/* ---------- 여행 네비 앱 인식 규칙에 맞춰 항목 한 줄 텍스트 구성 ----------
-   규칙(가이드 문서 기준):
-   - 라벨(이동/문화 등) 절대 넣지 않음, 실제 제목만
-   - 짧은 메모는 " - 메모" 형태로 제목 뒤에 붙임(좌표 앞)
-   - 좌표는 반각 괄호로 맨 끝에 (lat, lng), 소수점 4자리 이상
-   - 호텔 체크인/식당 예약 키워드 누락시 안전하게 보정(사전 규칙+2차 방어) */
+/* ============================================================================
+   문서 생성 v5.0 — 업로드된 노르웨이 일정표(.docx) 양식을 그대로 재현
+   ----------------------------------------------------------------------------
+   한 줄 = 한 문단. 표(table)는 절대 쓰지 않음 (PDF 변환 시 셀이 쪼개져 파싱 깨짐).
+
+   레이아웃
+     여행 제목
+     2025년 8월 14일 ~ 8월 23일
+     경호님 + 미정님 (2인)
+     (빈 줄)
+     렌트카: Hertz — 이유
+     픽업 … / 반납 …
+     (빈 줄)
+     8/14 금                        ← 날짜 줄 (M/D 요일)
+        ☀ 일출 05:42 / 일몰 21:18 · 골든아워 20:18~21:18 · 총 운전 약 210분
+     18:35 인천공항 출발 (대한항공 JL5206편, 이코노미)
+        메모: 나리타 환승 약 2시간
+     (빈 줄)
+     8/15 토
+     …
+
+   ▶ 네비 앱 파싱 규칙 준수
+     · 날짜 줄은 "M/D 요일"로 시작
+     · 일정 줄은 "HH:MM 제목"으로 시작 (시간이 줄 맨 앞)
+     · 메모 줄은 HH:MM으로 시작하지 않으므로 파서가 건너뜀 → 안전
+     · 공항="공항"+"출발/도착", 호텔="호텔명 체크인",
+       렌트카="렌터카"+"픽업/반납", 식당="예약필수/예약권장"
+   ============================================================================ */
+
+/* 네비 앱이 인식하는 필수 키워드가 빠졌으면 안전하게 보정 */
 function ensureAppKeywords(it, title){
   if(it.type==='hotel' && !/체크인|체크아웃/.test(title)) title+=' 체크인';
+  if(it.type==='car'   && !/픽업|반납/.test(title) && /렌터카|렌트카/.test(title)) title+=' 픽업';
+  if(it.type==='food'  && /예약/.test(it.note||'') && !/예약(필수|권장|번호)/.test(title)) title+=' 예약필수';
   return title;
 }
+
+/* 좌표 문자열 — 노르웨이 원본처럼 소수점을 넉넉히 남기되 6자리로 정리 */
+function coordStr(o){
+  if(typeof o.lat!=='number' || typeof o.lng!=='number') return '';
+  if(o.lat===0 && o.lng===0) return '';
+  return ' ('+o.lat.toFixed(6)+', '+o.lng.toFixed(6)+')';
+}
+
+/* 시각을 반드시 두 자리 HH:MM으로 (가이드: "9:40" ❌ → "09:40" ✅, 세미콜론도 콜론으로) */
+function normTime(t){
+  if(!t) return '';
+  const m=/^\s*(\d{1,2})\s*[:;.]\s*(\d{1,2})\s*$/.exec(String(t));
+  if(!m) return String(t).trim();
+  return String(m[1]).padStart(2,'0')+':'+String(m[2]).padStart(2,'0');
+}
+
+/* 일정 한 줄: "HH:MM 제목 (lat, lng)" */
 function appLine(it){
   let title=(it.title||'').trim();
   title=ensureAppKeywords(it, title);
-  if(it.note && it.note.length<=22) title+=' - '+it.note;
-  if(it.type==='food' && /예약/.test(it.note||'') && !/예약(필수|번호)/.test(title)) title+=' 예약필수';
-  if(hasCoord(it)) title+=' ('+coordStr(it)+')';
-  return (it.time?it.time+' ':'')+title;
+  const t=normTime(it.time);
+  return (t? t+' ' : '')+title+coordStr(it);
 }
+
+/* 메모 줄들 — 앱 파서는 HH:MM으로 시작하지 않는 줄을 무시하므로 자유롭게 적어도 안전 */
+function noteLines(it){
+  const out=[];
+  if(it.note) out.push('   메모: '+it.note);
+  const extra=[];
+  if(it.rating) extra.push('평점 '+it.rating+(it.reviewCount? ' ('+it.reviewCount.toLocaleString()+'건)':''));
+  if(it.hours && it.hours.length) extra.push('영업시간 '+it.hours[0].split(': ').slice(1).join(': '));
+  if(extra.length) out.push('   '+extra.join(' · '));
+  return out;
+}
+
 function tripDateRange(p){
   if(PERIOD && PERIOD.startIso && PERIOD.endIso){
     const s=new Date(PERIOD.startIso+'T00:00'), e=new Date(PERIOD.endIso+'T00:00');
     const y=s.getFullYear();
     let out=y+'년 '+(s.getMonth()+1)+'월 '+s.getDate()+'일 ~ ';
-    out += (e.getFullYear()!==y? (e.getFullYear()+'년 ') : '') + (e.getMonth()!==s.getMonth()? (e.getMonth()+1)+'월 ':'') + e.getDate()+'일';
+    out += (e.getFullYear()!==y? (e.getFullYear()+'년 ') : '') + (e.getMonth()+1)+'월 ' + e.getDate()+'일';
     return out;
   }
   const days=p.days||[];
@@ -713,10 +907,68 @@ function tripDateRange(p){
   return '';
 }
 
-/* ---------- RTF 파일 생성 (진짜 RTF 표준 — Word·한글(HWP)·구글독스 전부 정식 지원) ----------
-   ※ 여행 네비 앱(PDF 업로드) 인식 형식 그대로 생성:
-      제목/기간/인원 → 빈줄 → "M/D 요일" → "HH:MM 제목 (lat, lng)" 줄글(표 사용 안함) → 다음날 앞 빈줄
-      부가정보(렌트카 추천·검증경고·팁)는 맨 위/맨 아래에만 배치해 날짜별 파싱 영역을 깨끗하게 유지 */
+/* ---------------------------------------------------------------------------
+   단일 진실 공급원: 문서·복사·인쇄가 전부 이 배열 하나를 쓴다.
+   각 원소 {t:'title'|'meta'|'date'|'item'|'note'|'blank'|'head', s:'문자열'}
+   --------------------------------------------------------------------------- */
+function buildPlainLines(p){
+  const L=[];
+  const push=(t,s)=>L.push({t, s});
+
+  push('title', p.title||'여행 일정');
+  const range=tripDateRange(p);
+  if(range) push('meta', range);
+  push('meta', '경호님 + 미정님 (2인)');
+  push('blank','');
+
+  if(p.rentalCar && p.rentalCar.company){
+    const rc=p.rentalCar;
+    push('meta', '렌트카: '+rc.company+(rc.reason? ' — '+rc.reason : ''));
+    if(rc.pickup||rc.dropoff) push('meta', '픽업 '+(rc.pickup||'-')+' / 반납 '+(rc.dropoff||'-'));
+    push('blank','');
+  }
+
+  (p.days||[]).forEach((d, di)=>{
+    if(di>0) push('blank','');
+    push('date', d.date||'');
+
+    // 그날 요약(일출·일몰·운전시간) — HH:MM으로 시작하지 않으므로 파싱에 영향 없음
+    const bits=[];
+    if(d.label) bits.push(d.label);
+    if(d.sun){
+      if(d.sun.polar) bits.push('☀ '+d.sun.polar);
+      else bits.push('☀ 일출 '+d.sun.sunrise+' / 일몰 '+d.sun.sunset+' · 골든아워 '+d.sun.goldenEve+'~'+d.sun.sunset);
+    }
+    if(typeof d.driveMinutes==='number') bits.push('🚗 총 운전 약 '+d.driveMinutes+'분');
+    if(bits.length) push('note','   '+bits.join(' · '));
+
+    (d.items||[]).forEach(it=>{
+      push('item', appLine(it));
+      noteLines(it).forEach(n=>push('note', n));
+    });
+
+    // 숙소가 items에 안 들어간 경우 보강
+    const hasHotelItem=(d.items||[]).some(it=>it.type==='hotel');
+    if(d.hotel && d.hotel.name && !hasHotelItem){
+      push('item', d.hotel.name+' 체크인'+coordStr(d.hotel));
+      if(d.hotel.note) push('note','   메모: '+d.hotel.note);
+    }
+  });
+
+  if(p._meta && p._meta.findings && p._meta.findings.length){
+    push('blank','');
+    push('head','[검증에서 발견된 사항]');
+    p._meta.findings.slice(0,20).forEach(f=>push('note','- '+f));
+  }
+  if(p.tips && p.tips.length){
+    push('blank','');
+    push('head','[챙길 것 · 팁]');
+    p.tips.forEach(t=>push('note','- '+t));
+  }
+  return L;
+}
+
+/* ---------- RTF (Word·한글(HWP)·구글독스 정식 지원) ---------- */
 function rtfEscape(s){
   s=(s==null?'':String(s));
   let out='';
@@ -727,7 +979,7 @@ function rtfEscape(s){
     else if(code<128){ out+=ch; }
     else if(code>0xFFFF){
       const c=code-0x10000;
-      let hi=0xD800+(c>>10), lo=0xDC00+(c&0x3FF);
+      let hi=0xD800+(c>>10); const lo=0xDC00+(c&0x3FF);
       if(hi>32767) hi-=65536;
       out+='\\u'+hi+'?\\u'+(lo>32767?lo-65536:lo)+'?';
     } else {
@@ -738,75 +990,55 @@ function rtfEscape(s){
 }
 function buildRtfDoc(p){
   let b='';
-  // 상단: 제목 / 기간 / 인원 — 가이드 템플릿과 동일한 3줄 구조(파싱 대상 아님, 사람이 읽는 용도)
-  b+='\\pard\\b\\fs32 '+rtfEscape(p.title||'여행 일정')+'\\b0\\fs20\\par\n';
-  const range=tripDateRange(p);
-  if(range) b+=rtfEscape(range)+'\\par\n';
-  b+=rtfEscape('경호님 + 미정님 (2인)')+'\\par\n';
-  b+='\\par\n';
-
-  // 부가정보(렌트카 추천) — 날짜 블록 시작 전, 맨 위에만
-  if(p.rentalCar && p.rentalCar.company){
-    const rc=p.rentalCar;
-    let line='렌트카: '+rc.company;
-    if(rc.reason) line+=' ('+rc.reason+')';
-    b+=rtfEscape(line)+'\\par\n';
-    if(rc.pickup||rc.dropoff) b+=rtfEscape('픽업 '+(rc.pickup||'')+' / 반납 '+(rc.dropoff||''))+'\\par\n';
-    b+='\\par\n';
-  }
-
-  // 날짜별 본문 — 앱이 실제로 파싱하는 핵심 영역. 라벨 없이, 표 없이, 한 줄=한 문단.
-  (p.days||[]).forEach((d, di)=>{
-    if(di>0) b+='\\par\n'; // 날짜 블록 사이 빈 줄(가이드 예시와 동일)
-    b+='\\b '+rtfEscape(d.date||'')+'\\b0\\par\n';
-    (d.items||[]).forEach(it=>{
-      b+=rtfEscape(appLine(it))+'\\par\n';
-    });
+  buildPlainLines(p).forEach(({t,s})=>{
+    if(t==='blank'){ b+='\\par\n'; return; }
+    if(t==='title'){ b+='\\pard\\b\\fs32 '+rtfEscape(s)+'\\b0\\fs20\\par\n'; return; }
+    if(t==='date'){  b+='\\pard\\b\\fs24 '+rtfEscape(s)+'\\b0\\fs20\\par\n'; return; }
+    if(t==='head'){  b+='\\pard\\b '+rtfEscape(s)+'\\b0\\par\n'; return; }
+    if(t==='note'){  b+='\\pard\\i '+rtfEscape(s)+'\\i0\\par\n'; return; }
+    b+='\\pard '+rtfEscape(s)+'\\par\n';
   });
-
-  // 부가정보(검증 경고·팁) — 날짜 블록 다 끝난 맨 아래에만
-  if(p._meta && p._meta.warnings && p._meta.warnings.length){
-    b+='\\par\n'+rtfEscape('[검증 참고사항]')+'\\par\n';
-    p._meta.warnings.forEach(w=>{ b+=rtfEscape('- '+w)+'\\par\n'; });
-  }
-  if(p.tips && p.tips.length){
-    b+='\\par\n'+rtfEscape('[챙길 것 · 팁]')+'\\par\n';
-    p.tips.forEach(t=>{ b+=rtfEscape('- '+t)+'\\par\n'; });
-  }
   return '{\\rtf1\\ansi\\ansicpg949\\deff0\\deflang1042{\\fonttbl{\\f0\\fnil\\fcharset129 Malgun Gothic;}}\\f0\\fs20\n'+b+'}';
 }
 function safeName(s){ return (s||'여행일정').replace(/[\\/:*?"<>|]/g,' ').replace(/\s+/g,'_').slice(0,60); }
 function downloadDoc(){
   const rtf=buildRtfDoc(LAST);
-  const blob=new Blob([rtf], {type:'application/rtf'});
+  const blob=new Blob(['\ufeff'+rtf], {type:'application/rtf'});
   const url=URL.createObjectURL(blob);
   const a=document.createElement('a');
   a.href=url; a.download=safeName(LAST.title)+'.rtf';
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(url), 1500);
-  flash('문서 파일을 내려받았어요 (Word·한글 모두 열립니다).');
+  flash('DOC 파일을 내려받았어요 (Word·한글·구글독스 모두 열립니다).');
 }
 
-function planToText(p){
-  let s=(p.title||'여행 일정')+'\n';
-  const range=tripDateRange(p);
-  if(range) s+=range+'\n';
-  s+='경호님 + 미정님 (2인)\n\n';
-  if(p.rentalCar && p.rentalCar.company){
-    s+='렌트카: '+p.rentalCar.company+(p.rentalCar.reason?' ('+p.rentalCar.reason+')':'')+'\n';
-    if(p.rentalCar.pickup||p.rentalCar.dropoff) s+='픽업 '+(p.rentalCar.pickup||'')+' / 반납 '+(p.rentalCar.dropoff||'')+'\n';
-    s+='\n';
-  }
-  (p.days||[]).forEach((d,di)=>{
-    if(di>0) s+='\n';
-    s+=(d.date||'')+'\n';
-    (d.items||[]).forEach(it=>{ s+=appLine(it)+'\n'; });
+/* ---------- PDF 바로 저장: 인쇄용 평문 레이아웃을 만들어 print() ----------
+   Word를 거치지 않고도 네비 앱이 그대로 인식하는 PDF가 나옵니다.
+   (표를 쓰지 않고 한 줄 = 한 문단이라 pdf.js 파서가 시간·제목을 정확히 읽습니다) */
+function buildPrintDoc(p){
+  const wrap=document.getElementById('printDoc');
+  let h='';
+  buildPlainLines(p).forEach(({t,s})=>{
+    if(t==='blank'){ h+='<p class="pd-blank">&nbsp;</p>'; return; }
+    h+=`<p class="pd-${t}">${esc(s)}</p>`;
   });
-  if(p._meta && p._meta.warnings && p._meta.warnings.length){ s+='\n[검증 참고사항]\n'; p._meta.warnings.forEach(w=>s+='- '+w+'\n'); }
-  if(p.tips&&p.tips.length){ s+='\n[챙길 것 · 팁]\n'; p.tips.forEach(t=>s+='- '+t+'\n'); }
-  return s;
+  wrap.innerHTML=h;
+}
+function printPdf(){
+  buildPrintDoc(LAST);
+  document.body.classList.add('printing');
+  setTimeout(()=>{
+    window.print();
+    setTimeout(()=>document.body.classList.remove('printing'), 500);
+  }, 60);
+}
+
+/* ---------- 텍스트 복사 ---------- */
+function planToText(p){
+  return buildPlainLines(p).map(({t,s})=> t==='blank'? '' : s).join('\n');
 }
 function copyText(){ const t=planToText(LAST); navigator.clipboard.writeText(t).then(()=>flash('일정을 텍스트로 복사했어요.'),()=>flash('복사 실패 — 길게 눌러 복사해 주세요.')); }
+
 
 /* ---------- go ---------- */
 $('#go').addEventListener('click', async ()=>{
@@ -818,7 +1050,7 @@ $('#go').addEventListener('click', async ()=>{
   $('#msg').className='msg';
   const go=$('#go'); go.classList.add('loading'); go.disabled=true;
   const label=go.querySelector('.go-label'); const old=label.textContent;
-  const stages=['초안 생성 중… (Gemini/Claude)','실제 장소·좌표 검증 중…','동선·운전시간 계산 중…','최종 검수 중…'];
+  const stages=['거점 지역 파악 중… (Gemini)','명소 후보 수집 중… (OSM + Google Places)','초안 생성 중… (Gemini)','좌표·평점·영업시간 검증 중…','일출·일몰 + 운전시간 계산 중…','최종 검수 중… (놓친 명소·무리한 일정·영업시간 충돌)'];
   let si=0, elapsed=0, chunkNote=''; label.textContent=stages[0];
   const stageTimer=setInterval(()=>{
     elapsed+=6;
@@ -880,10 +1112,10 @@ $('#histList').addEventListener('click', async (e)=>{
 renderHistory(); // 페이지 열릴 때 최근 일정 목록 표시
 
 /* ---------- PWA: 앱 버전 표시 ----------
-   sw.js의 CACHE_NAME(예: 'ykh-travel-v3')과 항상 같은 v번호로 맞춰서 올리세요.
+   sw.js의 CACHE_NAME(예: 'ykh-travel-v4')과 항상 같은 v번호로 맞춰서 올리세요.
    화면 맨 아래 버전이 배포 후 바뀌었으면 새 코드가 실제로 반영된 것이고,
    그대로면 브라우저/SW 캐시가 옛 파일을 물고 있다는 뜻입니다. */
-const APP_VERSION = 'v3';
+const APP_VERSION = 'v5.0';
 document.getElementById('appVersion').textContent = 'YKH 여정 설계소 ' + APP_VERSION;
 
 /* ---------- PWA: 서비스 워커 등록 + 업데이트 감지 ---------- */

@@ -1,4 +1,4 @@
-/* YKH 여정 설계소 — Service Worker v3
+/* YKH 여정 설계소 — Service Worker v5.0
    캐시 전략: 앱 껍데기(HTML/아이콘/폰트)만 캐싱 → 오프라인에서도 앱 열림
    Worker API 호출(일정 생성)은 항상 서버로, 캐시 안 함
 
@@ -7,7 +7,7 @@
    고쳐도 사용자 화면에는 반영이 안 됩니다. index.html 맨 아래 APP_VERSION도
    반드시 같은 번호로 같이 올려주세요 — 화면 하단 버전 표시로 실제 반영 여부를 확인할 수 있습니다. */
 
-const CACHE_NAME = 'ykh-travel-v3';
+const CACHE_NAME = 'ykh-travel-v5-0';
 const PRECACHE_URLS = [
   './',
   './index.html',
