@@ -207,6 +207,21 @@
   .btn-ghost{background:#fff; color:var(--ink-soft)}
 
   footer{margin-top:30px; text-align:center; font-size:11.5px; color:var(--ink-soft)}
+  /* ── Worker 미설정 안내 배너 ── */
+  #setupBanner{
+    background:linear-gradient(180deg,#FFF7E6,#FFF1D6);
+    border:1px solid #E6C88A; border-radius:16px;
+    padding:16px 18px; margin-bottom:16px;
+  }
+  .sb-title{font-size:15.5px; font-weight:800; color:#7A5210; margin-bottom:6px}
+  .sb-body{font-size:13.5px; line-height:1.7; color:#5C4210}
+  .sb-btn{
+    margin-top:11px; padding:10px 18px; border-radius:11px; cursor:pointer;
+    background:#7A5210; color:#fff; border:0; font-weight:700; font-size:13.5px;
+    font-family:inherit;
+  }
+  .sb-btn:hover{background:#5C3E0C}
+
   /* ── 항공권 드래그앤드롭 존 ── */
   #dropZone{
     border:2px dashed #B9C9BC; border-radius:14px; background:#F5F9F5;
@@ -271,6 +286,16 @@
   </header>
 
   <!-- FORM -->
+  <!-- Worker 주소 미설정 안내 — 설정 전에는 아무것도 동작하지 않으므로 최상단에 크게 -->
+  <div id="setupBanner" style="display:none">
+    <div class="sb-title">⚙️ 먼저 1회 설정이 필요해요</div>
+    <div class="sb-body">
+      이 앱은 항공권 인식과 일정 생성을 <b>경호님 Cloudflare Worker</b>를 통해 처리합니다.
+      Worker 주소를 넣기 전에는 항공권 업로드가 동작하지 않아요.
+    </div>
+    <button type="button" class="sb-btn" id="setupBtn">Worker 주소 입력하기 →</button>
+  </div>
+
   <section class="panel" id="form">
     <label class="f">✈️ 왕복 항공권 (확정된 일정을 입력하세요)</label>
 
@@ -294,6 +319,7 @@
         <button type="button" class="link" id="fbRetryFailed" style="padding:5px 10px; display:none; background:#E8F0E9; border-color:#9CC3A6">🔁 실패한 파일만 다시 시도</button>
         <button type="button" class="link" id="fbRetry" style="padding:5px 10px">📷 다시 인식 시도</button>
         <button type="button" class="link" id="fbManual" style="padding:5px 10px">✍️ 직접 입력할게요</button>
+        <button type="button" class="link" id="fbConn" style="padding:5px 10px">⚙️ Worker 주소 설정</button>
         <button type="button" class="link" id="fbDiag" style="padding:5px 10px">🩺 서버 진단하기</button>
       </div>
     </div>
@@ -380,9 +406,11 @@
 <!-- CONNECTION MODAL -->
 <div class="ov" id="ovConn">
   <div class="sheet">
-    <h3>Worker 연결 설정 (필수)</h3>
-    <p>이 앱은 <b>Gemini</b> + 지도 API(Google Places · OpenStreetMap · Routes/OSRM)를 서버(Cloudflare Worker)에서 순서대로 호출해 일정을 검증합니다. 브라우저에서 직접 호출할 수 없어서 <b>Worker 주소가 반드시 필요</b>합니다.</p>
-    <input id="workerUrl" type="text" placeholder="https://ykh-travel-proxy.xxx.workers.dev" />
+    <h3>Worker 연결 설정</h3>
+    <p>Worker 주소는 <b>이미 기본값으로 들어가 있어</b> 따로 설정하지 않아도 바로 동작합니다.
+       주소를 바꿔야 할 때만 아래에 입력하세요. <b>비워두고 저장하면 기본값으로 되돌아갑니다.</b></p>
+    <input id="workerUrl" type="text" />
+    <div id="curWorker" class="hint" style="margin-top:7px"></div>
     <p class="hint" style="margin-top:10px">
       필수: <b>GEMINI_API_KEY</b>.<br>
       <b>OPENROUTER_API_KEY</b> — Cloudflare 서버 IP가 Gemini 지역 제한에 걸릴 때 자동 우회합니다. <b>한국에서 배포했다면 사실상 필수</b>입니다 (openrouter.ai 무료 발급).<br>
@@ -409,6 +437,19 @@ const store = {
   get(k){ try{ const v = localStorage.getItem(k); return v===null? (k in mem? mem[k]:null) : v; }catch(e){ return k in mem? mem[k]:null; } },
   set(k,v){ try{ localStorage.setItem(k,v); }catch(e){} mem[k]=v; }
 };
+
+/* ---------- Worker 주소 ----------
+   경호님 Worker 주소는 늘 같으므로 기본값으로 넣어둡니다.
+   → 설치형(PWA)으로 새로 띄우거나 다른 기기에서 열어도 바로 동작합니다.
+   ※ 주소를 바꾸고 싶으면 ⚙︎ 배포 연결 설정에서 덮어쓰면 되고,
+     빈 칸으로 저장하면 아래 기본값으로 되돌아갑니다. */
+const DEFAULT_WORKER = 'https://ykh-travel-proxy.kyunghoyou.workers.dev';
+
+/* 실제로 사용할 주소 — 저장된 값이 있으면 그것, 없으면 기본값 */
+function workerUrl(){
+  const saved = (store.get('ykh_worker')||'').trim();
+  return saved || DEFAULT_WORKER;
+}
 
 /* ---------- learned style profile (default) ---------- */
 const DEFAULT_STYLE = `[김경호(YKH)님 여행 스타일 — 18개 실제 여행일정 학습]
@@ -603,6 +644,14 @@ async function handleTicketFiles(fileList){
   if(!files.length) return;
   if(DZ_BUSY){ flash('이미 인식 중이에요. 잠시만 기다려 주세요.'); return; }
 
+  // Worker 주소가 없으면 8번 실패하기 전에 미리 막고 설정 창을 바로 띄운다
+  if(!workerUrl()){
+    showSetupBanner();
+    showErr('먼저 Worker 주소를 설정해 주세요. 설정 창을 띄웠습니다.');
+    openConnModal();
+    return;
+  }
+
   const TOO_BIG=files.filter(f=>f.size>12*1024*1024);
   if(TOO_BIG.length){
     showErr(`파일이 너무 큽니다(12MB 초과): ${TOO_BIG.map(f=>f.name).join(', ')} — 캡처본으로 줄여 올려주세요.`);
@@ -775,9 +824,9 @@ $('#fbRetryFailed').addEventListener('click', ()=>{
 });
 
 /* 서버 자가 진단 — 어느 단계에서 막혔는지 그대로 보여준다 */
-async function runDiag(targetEl){
-  const worker=store.get('ykh_worker');
-  if(!worker){ showErr('먼저 ⚙︎ 배포 연결 설정에서 Worker 주소를 넣어주세요.'); return; }
+async function runDiag(targetEl, urlOverride){
+  const worker=(urlOverride||'').trim()||workerUrl();
+  if(!worker){ showErr('Worker 주소가 없습니다.'); return; }
   targetEl.style.display='block';
   targetEl.innerHTML='🩺 서버 진단 중… (10~20초)';
   try{
@@ -801,6 +850,7 @@ async function runDiag(targetEl){
   }
 }
 $('#fbDiag').addEventListener('click', ()=> runDiag($('#fbDetail')));
+$('#fbConn').addEventListener('click', openConnModal);
 
 $('#fbManual').addEventListener('click', ()=>{
   $('#ticketFallback').style.display='none';
@@ -875,26 +925,56 @@ document.querySelectorAll('.ov').forEach(o=>o.addEventListener('click', e=>{ if(
 
 $('#editStyle').addEventListener('click', ()=>{ $('#styleText').value=store.get('ykh_style'); openOv('#ovStyle'); });
 $('#saveStyle').addEventListener('click', ()=>{ store.set('ykh_style', $('#styleText').value.trim()||DEFAULT_STYLE); closeOv($('#ovStyle')); flash('스타일을 저장했어요.'); });
-$('#editConn').addEventListener('click', ()=>{
-  $('#workerUrl').value=store.get('ykh_worker')||'';
+/* Worker 주소가 없으면 상단 배너를 띄운다 (설정되면 자동으로 사라짐) */
+function showSetupBanner(){
+  const b=$('#setupBanner');
+  if(b) b.style.display = workerUrl() ? 'none' : 'block';
+}
+function openConnModal(){
+  const saved=(store.get('ykh_worker')||'').trim();
+  const el=$('#workerUrl');
+  el.value=saved;
+  el.placeholder=DEFAULT_WORKER+'  (비워두면 이 기본값 사용)';
   $('#coordToggle').checked = store.get('ykh_coords')!=='0';
+  const cur=$('#curWorker');
+  if(cur){
+    cur.innerHTML = saved
+      ? `현재 사용 중: <b>${esc(saved)}</b>`
+      : `현재 사용 중: <b>${esc(DEFAULT_WORKER)}</b> <span style="opacity:.7">(기본값)</span>`;
+  }
   openOv('#ovConn');
   checkWorkerVersion();
-});
+}
+$('#editConn').addEventListener('click', openConnModal);
+$('#setupBtn').addEventListener('click', openConnModal);
+showSetupBanner();
 $('#connDiag').addEventListener('click', ()=>{
-  store.set('ykh_worker', $('#workerUrl').value.trim() || store.get('ykh_worker') || '');
-  runDiag($('#connDiagBox'));
+  // 입력칸에 적힌 주소로 진단 (저장하지는 않음 — 저장은 '저장' 버튼으로만)
+  runDiag($('#connDiagBox'), $('#workerUrl').value.trim() || workerUrl());
 });
 $('#saveConn').addEventListener('click', ()=>{
-  store.set('ykh_worker', $('#workerUrl').value.trim());
+  let u=$('#workerUrl').value.trim();
+  // 흔한 실수 보정: https:// 누락 / http로 붙여넣음 / 끝 슬래시 / ?diag=1 같은 쿼리가 함께 복사됨
+  if(u){
+    u=u.split('?')[0].split('#')[0];          // ① 쿼리·해시 먼저 제거
+    if(/^http:\/\//i.test(u)) u='https://'+u.slice(7);   // ② http → https 승격
+    else if(!/^https:\/\//i.test(u)) u='https://'+u;     // ③ 스킴 없으면 붙임
+    u=u.replace(/\/+$/,'');                   // ④ 그 다음 끝 슬래시 제거
+    if(!/^https:\/\/[^\s/]+\.[^\s/]+/.test(u)){
+      showErr('Worker 주소 형식이 올바르지 않아요. 예: https://ykh-travel-proxy.kyunghoyou.workers.dev');
+      return;
+    }
+  }
+  store.set('ykh_worker', u);
   store.set('ykh_coords', $('#coordToggle').checked ? '1' : '0');
   closeOv($('#ovConn'));
-  flash('연결 설정을 저장했어요.');
+  showSetupBanner();
+  flash(u ? ('Worker 주소를 저장했어요: '+u) : ('기본 Worker 주소로 되돌렸어요: '+DEFAULT_WORKER));
 });
 
 /* Worker 쪽 버전·키 설정 상태를 실제로 물어봐서 보여준다 (배포 반영 확인용) */
 async function checkWorkerVersion(){
-  const box=$('#verBox'); const worker=$('#workerUrl').value.trim()||store.get('ykh_worker');
+  const box=$('#verBox'); const worker=$('#workerUrl').value.trim()||workerUrl();
   if(!worker){ box.textContent='Worker 주소를 넣으면 서버 버전을 확인합니다.'; return; }
   box.textContent='서버 버전 확인 중…';
   try{
@@ -926,8 +1006,11 @@ function buildRequestPayload(){
 
 /* ---------- Worker 호출 (공용) ---------- */
 async function callWorkerRaw(payload, timeoutMs){
-  const worker=store.get('ykh_worker');
-  if(!worker){ throw new Error('먼저 ⚙︎ Worker 연결 설정에서 Worker 주소를 넣어주세요. 지도 API·검증 단계는 브라우저에서 직접 호출할 수 없어요.'); }
+  const worker=workerUrl();
+  if(!worker){
+    try{ showSetupBanner(); }catch{}
+    throw new Error('Worker 주소가 설정되지 않았습니다. 화면 위쪽 "Worker 주소 입력하기" 버튼(또는 아래 ⚙︎ 배포 연결 설정)에서 한 번만 넣어주시면 됩니다.');
+  }
 
   const controller = new AbortController();
   const timer = setTimeout(()=>controller.abort(), timeoutMs);
@@ -1390,7 +1473,7 @@ function listUrl(worker, qs){ return worker+(worker.includes('?')?'&':'?')+qs; }
 async function renderHistory(){
   const wrap=$('#histWrap'), list=$('#histList');
   let items=[], source='local';
-  const worker=store.get('ykh_worker');
+  const worker=workerUrl();
   if(worker){
     try{
       const res=await fetch(listUrl(worker,'list=1'));
@@ -1701,7 +1784,7 @@ $('#go').addEventListener('click', async ()=>{
   if(!readSegs().some(s=>s.depDate||s.arrDate)){ showErr('먼저 <b>항공편 날짜</b>를 넣어주세요. 여행 기간이 거기서 정해져요.'); return; }
   if(!PERIOD){ showErr('여행 날짜 순서가 이상해요 — 항공편 날짜를 확인해 주세요.'); return; }
   if(!req){ showErr('<b>여행 요구사항</b> 칸에 지역과 원하는 것을 적어주세요.'); $('#req').focus(); return; }
-  if(!store.get('ykh_worker')){ showErr('먼저 <b>⚙︎ Worker 연결 설정</b>에서 Worker 주소를 넣어주세요.'); return; }
+  if(!workerUrl()){ showErr('먼저 <b>⚙︎ Worker 연결 설정</b>에서 Worker 주소를 넣어주세요.'); return; }
   $('#msg').className='msg';
   const go=$('#go'); go.classList.add('loading'); go.disabled=true;
   const label=go.querySelector('.go-label'); const old=label.textContent;
@@ -1756,7 +1839,7 @@ $('#histList').addEventListener('click', async (e)=>{
       const found=loadLocalHistory().find(x=>x.id===id);
       if(found){ render(found.plan); flash('불러왔어요.'); }
     } else {
-      const worker=store.get('ykh_worker');
+      const worker=workerUrl();
       const res=await fetch(listUrl(worker,'id='+encodeURIComponent(id)));
       const data=await res.json();
       if(data.error) throw new Error(data.error);
@@ -1770,7 +1853,7 @@ renderHistory(); // 페이지 열릴 때 최근 일정 목록 표시
    sw.js의 CACHE_NAME(예: 'ykh-travel-v4')과 항상 같은 v번호로 맞춰서 올리세요.
    화면 맨 아래 버전이 배포 후 바뀌었으면 새 코드가 실제로 반영된 것이고,
    그대로면 브라우저/SW 캐시가 옛 파일을 물고 있다는 뜻입니다. */
-const APP_VERSION = 'v6.2';
+const APP_VERSION = 'v6.4';
 document.getElementById('appVersion').textContent = 'YKH 여정 설계소 ' + APP_VERSION;
 
 /* ---------- PWA: 서비스 워커 등록 + 업데이트 감지 ---------- */
