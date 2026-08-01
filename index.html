@@ -492,6 +492,30 @@ function workerUrl(){
   return saved || DEFAULT_WORKER;
 }
 
+/* 여행 기간 — 항공편에서 계산됨. 초기화 순서 때문에 선언부에 모아둔다. */
+let PERIOD=null; // {nights, days, dates:[{date,dow}]}
+
+/* ---------- 생성 모드 (무료 한도 절약) ----------
+   LLM 호출 수 = 청크수 × 단계수,  청크수 = ceil(여행일수 / chunk)
+
+   ⚠ 흔한 오해: "10일을 5일+5일로 나누면 호출이 준다" → 오히려 늘어납니다.
+      나눠도 각 요청이 다시 chunk 단위로 쪼개지고, Scout·Critic이 요청마다 반복되거든요.
+        10일 한 번   = 5청크 × 3 = 15회
+        5일씩 두 번  = 3청크 × 3 × 2 = 18회  ❌
+      줄이려면 나누는 게 아니라 **chunk를 키우고 단계를 줄여야** 합니다.
+
+   Cloudflare 무료 플랜의 "요청당 subrequest 50개" 한도도 함께 고려해,
+   chunk가 커지면 하루당 검증 장소 수는 자동으로 줄어듭니다(computeBudget). */
+const GEN_MODES = {
+  precise:  { label:'정밀', chunk:2, stages:3, desc:'2일씩 · 장소를 가장 꼼꼼히 검증' },
+  balanced: { label:'균형', chunk:4, stages:3, desc:'4일씩 · 품질과 호출 수의 균형' },
+  thrifty:  { label:'절약', chunk:5, stages:2, desc:'5일씩 · 지역분석 생략' },
+  minimal:  { label:'최소', chunk:5, stages:1, desc:'5일씩 · 검수까지 생략' },
+};
+function genModeKey(){ const k=store.get('ykh_mode')||'balanced'; return GEN_MODES[k]?k:'balanced'; }
+function genMode(){ return GEN_MODES[genModeKey()]; }
+function estimateCalls(days, m){ m=m||genMode(); return Math.ceil(days/m.chunk)*m.stages; }
+
 /* ---------- learned style profile (default) ---------- */
 const DEFAULT_STYLE = `[김경호(YKH)님 여행 스타일 — 18개 실제 여행일정 학습]
 
@@ -1047,7 +1071,6 @@ function readSegs(){
   }));
 }
 
-let PERIOD=null; // {nights, days, dates:[{date,dow}]}
 function computePeriod(){
   const segs=readSegs();
   const deps=segs.map(s=>s.depDate).filter(Boolean);
@@ -1922,26 +1945,6 @@ async function extractFlightFromImage(file, onStage){
    몰아넣지 말고 며칠씩 나눠 여러 번 호출해야 매일 "모든" 장소가 검증됩니다.
    chunk가 크면 한 번의 Worker 호출에서 더 많은 날짜를 처리하지만, 날짜당 검증 장소는 줄어듭니다. *
    전부 검증 여유가 생깁니다(LLM 2회 + 여유분 제외 후 약 40여 개 예산). */
-/* ---------- 생성 모드 (무료 한도 절약) ----------
-   LLM 호출 수 = 청크수 × 단계수,  청크수 = ceil(여행일수 / chunk)
-
-   ⚠ 흔한 오해: "10일을 5일+5일로 나누면 호출이 준다" → 오히려 늘어납니다.
-      나눠도 각 요청이 다시 chunk 단위로 쪼개지고, Scout·Critic이 요청마다 반복되거든요.
-        10일 한 번   = 5청크 × 3 = 15회
-        5일씩 두 번  = 3청크 × 3 × 2 = 18회  ❌
-      줄이려면 나누는 게 아니라 **chunk를 키우고 단계를 줄여야** 합니다.
-
-   Cloudflare 무료 플랜의 "요청당 subrequest 50개" 한도도 함께 고려해,
-   chunk가 커지면 하루당 검증 장소 수는 자동으로 줄어듭니다(computeBudget). */
-const GEN_MODES = {
-  precise:  { label:'정밀', chunk:2, stages:3, desc:'2일씩 · 장소를 가장 꼼꼼히 검증' },
-  balanced: { label:'균형', chunk:4, stages:3, desc:'4일씩 · 품질과 호출 수의 균형' },
-  thrifty:  { label:'절약', chunk:5, stages:2, desc:'5일씩 · 지역분석 생략' },
-  minimal:  { label:'최소', chunk:5, stages:1, desc:'5일씩 · 검수까지 생략' },
-};
-function genModeKey(){ const k=store.get('ykh_mode')||'balanced'; return GEN_MODES[k]?k:'balanced'; }
-function genMode(){ return GEN_MODES[genModeKey()]; }
-function estimateCalls(days, m){ m=m||genMode(); return Math.ceil(days/m.chunk)*m.stages; }
 
 function chunkDates(dates, size){
   const out=[];
@@ -2436,7 +2439,7 @@ renderHistory(); // 페이지 열릴 때 최근 일정 목록 표시
    sw.js의 CACHE_NAME(예: 'ykh-travel-v4')과 항상 같은 v번호로 맞춰서 올리세요.
    화면 맨 아래 버전이 배포 후 바뀌었으면 새 코드가 실제로 반영된 것이고,
    그대로면 브라우저/SW 캐시가 옛 파일을 물고 있다는 뜻입니다. */
-const APP_VERSION = 'v7.2';
+const APP_VERSION = 'v7.3';
 document.getElementById('appVersion').textContent = 'YKH 여정 설계소 ' + APP_VERSION;
 
 /* ---------- PWA: 서비스 워커 등록 + 업데이트 감지 ---------- */
