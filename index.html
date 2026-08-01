@@ -1451,7 +1451,7 @@ async function extractFlightFromImage(file, onStage){
     catch(e){ console.warn('페이지 렌더 실패:', e); }
 
     if(pages.length){
-      const all=[]; const errs=[]; const failedPages=[];
+      const all=[]; const errs=[]; const failedPages=[]; const emptyPages=[];
 
       // 페이지 1장 인식 — 429(분당 한도)는 기다렸다 재시도
       const runPage=async(i)=>{
@@ -1466,7 +1466,8 @@ async function extractFlightFromImage(file, onStage){
               sourceName:file.name||'',
             }, 90000);
             if(Array.isArray(d.segments)) all.push(...d.segments);
-            return true;                      // 구간 0개여도 호출 자체는 성공
+            if(d.empty) emptyPages.push(i+1);   // 약관 페이지 등 — 실패가 아님
+            return true;                        // 구간 0개여도 호출 자체는 성공
           }catch(e){
             const msg=String(e.message||e);
             const rate=/429|RESOURCE_EXHAUSTED|quota|rate|한도/i.test(msg);
@@ -1505,6 +1506,8 @@ async function extractFlightFromImage(file, onStage){
             `${file.name}: ${pages.length}페이지 중 ${failedPages.join(',')}페이지 인식 실패 — `+
             `구간이 빠졌을 수 있어요 (${errs[0]||''})`;
         }
+        // 약관·유의사항처럼 항공편이 없는 페이지는 정상이므로 경고하지 않는다
+        if(emptyPages.length) console.info(`${file.name}: ${emptyPages.join(',')}페이지는 항공편이 없는 페이지(약관 등) — 정상`);
         return all;
       }
       throw new Error(`스캔 PDF 인식 실패 — ${errs.slice(0,2).join(' / ')||'구간을 찾지 못함'}`);
@@ -1984,7 +1987,7 @@ renderHistory(); // 페이지 열릴 때 최근 일정 목록 표시
    sw.js의 CACHE_NAME(예: 'ykh-travel-v4')과 항상 같은 v번호로 맞춰서 올리세요.
    화면 맨 아래 버전이 배포 후 바뀌었으면 새 코드가 실제로 반영된 것이고,
    그대로면 브라우저/SW 캐시가 옛 파일을 물고 있다는 뜻입니다. */
-const APP_VERSION = 'v6.7';
+const APP_VERSION = 'v6.8';
 document.getElementById('appVersion').textContent = 'YKH 여정 설계소 ' + APP_VERSION;
 
 /* ---------- PWA: 서비스 워커 등록 + 업데이트 감지 ---------- */
