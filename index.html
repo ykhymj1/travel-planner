@@ -250,6 +250,7 @@
   }
   .fchip.ok{border-color:#9CC3A6; background:#F1F8F2; color:#2F6B41}
   .fchip.bad{border-color:#E3B4B4; background:#FDF3F3; color:#A33}
+  .fchip.warn{border-color:#E6C88A; background:#FFF8E9; color:#8A6413}
 
   #printDoc{display:none}
   @media print{
@@ -616,9 +617,12 @@ function dzFileChips(list){
   const box=$('#dzFiles');
   if(!list.length){ box.style.display='none'; return; }
   box.style.display='flex';
-  box.innerHTML=list.map(f=>
-    `<span class="fchip ${f.ok?'ok':(f.done?'bad':'')}">${f.ok?'✓':(f.done?'✕':'…')} ${esc(f.name)}${f.n!=null?` · ${f.n}구간`:''}</span>`
-  ).join('');
+  box.innerHTML=list.map(f=>{
+    const cls = f.partial ? 'warn' : (f.ok?'ok':(f.done?'bad':''));
+    const icon= f.partial ? '⚠' : (f.ok?'✓':(f.done?'✕':'…'));
+    const tail= f.n!=null ? ` · ${f.n}구간${f.partial?' (일부 페이지 실패)':''}` : '';
+    return `<span class="fchip ${cls}">${icon} ${esc(f.name)}${tail}</span>`;
+  }).join('');
 }
 
 /* ---------- 파일 여러 개 처리 (핵심) ---------- */
@@ -667,6 +671,7 @@ async function handleTicketFiles(fileList){
 
   const collected=[];
   const failed=[];
+  const partials=[];   // 일부 페이지만 인식된 파일 경고
 
   // 순차 처리 — Gemini 무료 등급의 분당 호출 제한을 넘지 않도록
   for(let i=0;i<files.length;i++){
@@ -698,6 +703,11 @@ async function handleTicketFiles(fileList){
     }else if(segs && segs.length){
       collected.push(...segs);
       status[i].ok=true; status[i].n=segs.length;
+      if(segs.partialWarning){
+        // 일부 페이지만 인식됨 — ✓ 가 아니라 ⚠ 로 표시하고 사유를 남긴다
+        status[i].partial=true;
+        partials.push(segs.partialWarning);
+      }
     }else{
       failed.push(files[i].name+' (구간을 찾지 못함)');
     }
@@ -750,23 +760,36 @@ async function handleTicketFiles(fileList){
   }
   flash(msg);
 
-  if(failed.length){
-    // 실패한 파일 객체를 보관해 두고 그것만 다시 시도할 수 있게 한다
-    FAILED_FILES = files.filter((f,i)=>!status[i].ok);
+  /* ── 실패·부분실패 안내 (둘 다 있을 수 있으므로 한 곳에서 처리) ──
+     예전에는 부분 실패를 조용히 넘겨서, 6구간짜리 항공권이 3구간만 인식돼도
+     ✓ 로 표시되고 여행 기간이 짧게 잡히는 문제가 있었다. */
+  const problemIdx = files.map((f,i)=>i).filter(i => !status[i].ok || status[i].partial);
+  if(problemIdx.length){
+    FAILED_FILES = problemIdx.map(i=>files[i]);
     const panel=$('#ticketFallback');
     panel.style.display='block';
     const detail=panel.querySelector('#fbDetail');
     if(detail){
+      let h='';
+      if(partials.length){
+        h += `<b>⚠️ 일부 페이지를 읽지 못했어요 — 구간이 빠졌을 수 있습니다</b>`
+           + `<div style="margin-top:5px">`+partials.map(p=>`· ${esc(p)}`).join('<br>')+`</div>`;
+      }
+      if(failed.length){
+        if(h) h += `<div style="height:8px"></div>`;
+        h += `<b>읽지 못한 파일 ${failed.length}개</b><div style="margin-top:5px">`
+           + failed.map(f=>`· <span style="word-break:break-all">${esc(String(f).slice(0,220))}</span>`).join('<br>')
+           + `</div>`;
+      }
+      h += `<div style="margin-top:8px; padding-top:7px; border-top:1px solid #E6D2AE">`
+         + `아래 <b>🔁 다시 시도</b>를 누르면 해당 파일만 다시 읽습니다. `
+         + `<b>이미 인식된 구간은 그대로 유지</b>되고 빠진 구간만 채워집니다.</div>`;
       detail.style.display='block';
-      detail.innerHTML =
-        `<b>읽지 못한 파일 ${failed.length}개</b><div style="margin-top:5px">`
-        + failed.map(f=>`· <span style="word-break:break-all">${esc(String(f).slice(0,220))}</span>`).join('<br>')
-        + `</div><div style="margin-top:8px; padding-top:7px; border-top:1px solid #E6D2AE">`
-        + `무료 모델은 요청마다 다른 모델이 걸려서 <b>같은 파일도 다시 하면 성공하는 경우가 많습니다.</b>`
-        + `</div>`;
+      detail.innerHTML=h;
     }
     const rb=$('#fbRetryFailed');
-    if(rb){ rb.style.display='inline-block'; rb.textContent=`🔁 실패한 ${FAILED_FILES.length}개만 다시 시도`; }
+    if(rb){ rb.style.display='inline-block'; rb.textContent=`🔁 ${FAILED_FILES.length}개 다시 시도`; }
+    panel.scrollIntoView({behavior:'smooth', block:'nearest'});
   }else{
     FAILED_FILES=[];
     const rb=$('#fbRetryFailed'); if(rb) rb.style.display='none';
@@ -910,6 +933,16 @@ function computePeriod(){
   chip.classList.remove('warn');
   const first=dates[0], last=dates[dates.length-1];
   txt.innerHTML=`<b>${nights}박 ${nights+1}일</b> &nbsp;<span class="d">${first.date}(${first.dow}) → ${last.date}(${last.dow})</span>`;
+
+  /* 왕복인데 편도처럼 보이면 알려준다 — 귀국편이 누락된 정황일 수 있다.
+     (출발 공항과 마지막 도착 공항이 다르고, 구간 수가 홀수인 경우) */
+  const airCode=t=>String(t||'').toUpperCase().replace(/[^A-Z]/g,'').slice(0,12);
+  const firstDep=airCode(segs[0] && segs[0].depAir);
+  const lastArr=airCode(segs[segs.length-1] && segs[segs.length-1].arrAir);
+  if(segs.length>=2 && firstDep && lastArr && firstDep!==lastArr){
+    chip.classList.add('warn');
+    txt.innerHTML += `<br><span class="d" style="color:#A05A00">⚠️ 출발지(${esc(segs[0].depAir)})와 최종 도착지(${esc(segs[segs.length-1].arrAir)})가 달라요. 귀국편이 빠지지 않았는지 확인해 주세요.</span>`;
+  }
 }
 
 $('#pace').addEventListener('click', e=>{ const b=e.target.closest('button'); if(!b)return;
@@ -1348,34 +1381,62 @@ async function extractFlightFromImage(file, onStage){
     catch(e){ console.warn('페이지 렌더 실패:', e); }
 
     if(pages.length){
-      const all=[]; const errs=[];
-      const firstPass=Math.min(3, pages.length);
+      const all=[]; const errs=[]; const failedPages=[];
 
+      // 페이지 1장 인식 — 429(분당 한도)는 기다렸다 재시도
       const runPage=async(i)=>{
-        stage(`스캔 페이지 인식 ${i+1}/${pages.length}`);
-        try{
-          const d=await callWorkerRaw({
-            action:'extractFlight',
-            imageBase64:pages[i],
-            mimeType:'image/jpeg',
-            pageInfo:{page:i+1, total:pages.length},
-            sourceName:file.name||'',
-          }, 90000);
-          if(Array.isArray(d.segments)) all.push(...d.segments);
-        }catch(e){ errs.push(`p${i+1}: ${e.message||e}`); }
+        for(let attempt=0; attempt<3; attempt++){
+          stage(`스캔 페이지 인식 ${i+1}/${pages.length}`+(attempt?` (재시도 ${attempt})`:''));
+          try{
+            const d=await callWorkerRaw({
+              action:'extractFlight',
+              imageBase64:pages[i],
+              mimeType:'image/jpeg',
+              pageInfo:{page:i+1, total:pages.length},
+              sourceName:file.name||'',
+            }, 90000);
+            if(Array.isArray(d.segments)) all.push(...d.segments);
+            return true;                      // 구간 0개여도 호출 자체는 성공
+          }catch(e){
+            const msg=String(e.message||e);
+            const rate=/429|RESOURCE_EXHAUSTED|quota|rate|한도/i.test(msg);
+            if(!rate || attempt===2){ errs.push(`p${i+1}: ${msg}`); failedPages.push(i+1); return false; }
+            const wait=(attempt+1)*20;
+            for(let sec=wait; sec>0; sec--){
+              stage(`호출 한도 대기 ${sec}초 — 페이지 ${i+1}/${pages.length}`);
+              await new Promise(r=>setTimeout(r,1000));
+            }
+          }
+        }
+        return false;
       };
 
-      for(let i=0;i<firstPass;i++) await runPage(i);
+      const firstPass=Math.min(3, pages.length);
+      for(let i=0;i<firstPass;i++){
+        await runPage(i);
+        if(i<firstPass-1) await new Promise(r=>setTimeout(r,900));  // 분당 한도 회피
+      }
 
       // 앞 3장에서 아무것도 못 찾았으면 나머지 페이지도 확인
       if(!all.length && pages.length>firstPass){
         for(let i=firstPass;i<pages.length;i++){
+          await new Promise(r=>setTimeout(r,900));
           await runPage(i);
-          if(all.length) break;   // 찾는 즉시 중단
+          if(all.length) break;
         }
       }
 
-      if(all.length) return all;
+      if(all.length){
+        // ⚠ 일부 페이지가 실패했으면 "성공"으로 위장하지 않는다.
+        //    예전에는 여기서 조용히 부분 결과만 반환해, 6구간짜리 항공권이
+        //    3구간만 인식됐는데도 ✓ 로 표시되는 문제가 있었다.
+        if(failedPages.length){
+          all.partialWarning =
+            `${file.name}: ${pages.length}페이지 중 ${failedPages.join(',')}페이지 인식 실패 — `+
+            `구간이 빠졌을 수 있어요 (${errs[0]||''})`;
+        }
+        return all;
+      }
       throw new Error(`스캔 PDF 인식 실패 — ${errs.slice(0,2).join(' / ')||'구간을 찾지 못함'}`);
     }
   }
@@ -1853,7 +1914,7 @@ renderHistory(); // 페이지 열릴 때 최근 일정 목록 표시
    sw.js의 CACHE_NAME(예: 'ykh-travel-v4')과 항상 같은 v번호로 맞춰서 올리세요.
    화면 맨 아래 버전이 배포 후 바뀌었으면 새 코드가 실제로 반영된 것이고,
    그대로면 브라우저/SW 캐시가 옛 파일을 물고 있다는 뜻입니다. */
-const APP_VERSION = 'v6.4';
+const APP_VERSION = 'v6.5';
 document.getElementById('appVersion').textContent = 'YKH 여정 설계소 ' + APP_VERSION;
 
 /* ---------- PWA: 서비스 워커 등록 + 업데이트 감지 ---------- */
