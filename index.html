@@ -291,6 +291,7 @@
       아래 칸에 <b>직접 입력</b>하시면 똑같이 일정이 만들어집니다. 날짜·시각·공항만 넣어도 충분하고, 항공사·편명은 알면 적어주세요.
       <div id="fbDetail" style="display:none; margin-top:8px; padding:8px 10px; background:#fff; border:1px solid #E6D2AE; border-radius:8px; line-height:1.55"></div>
       <div style="margin-top:8px; display:flex; gap:7px; flex-wrap:wrap">
+        <button type="button" class="link" id="fbRetryFailed" style="padding:5px 10px; display:none; background:#E8F0E9; border-color:#9CC3A6">🔁 실패한 파일만 다시 시도</button>
         <button type="button" class="link" id="fbRetry" style="padding:5px 10px">📷 다시 인식 시도</button>
         <button type="button" class="link" id="fbManual" style="padding:5px 10px">✍️ 직접 입력할게요</button>
         <button type="button" class="link" id="fbDiag" style="padding:5px 10px">🩺 서버 진단하기</button>
@@ -581,6 +582,22 @@ function dzFileChips(list){
 
 /* ---------- 파일 여러 개 처리 (핵심) ---------- */
 let DZ_BUSY=false;
+let FAILED_FILES=[];   // 실패한 파일만 재시도하기 위해 보관
+
+/* 이미 화면에 입력된 구간을 읽어와 새로 인식한 것과 합친다 (재시도 시 기존 것 보존) */
+function readExistingSegs(){
+  return [...segsEl.querySelectorAll('.flightseg')].map(c=>({
+    label: c.querySelector('.seg-label').value.trim(),
+    depDate: c.querySelector('.s-depDate').value,
+    depTime: c.querySelector('.s-depTimeH').value+':'+c.querySelector('.s-depTimeM').value,
+    depAir: c.querySelector('.s-depAir').value.trim(),
+    arrDate: c.querySelector('.s-arrDate').value,
+    arrTime: c.querySelector('.s-arrTimeH').value+':'+c.querySelector('.s-arrTimeM').value,
+    arrAir: c.querySelector('.s-arrAir').value.trim(),
+    airline: c.querySelector('.s-airline').value.trim(),
+  })).filter(s=>s.depDate || s.depAir);
+}
+
 async function handleTicketFiles(fileList){
   const files=[...fileList].filter(f=>f && f.size>0);
   if(!files.length) return;
@@ -607,10 +624,11 @@ async function handleTicketFiles(fileList){
     dzProgress(i, files.length, files[i].name);
 
     let segs=null, lastErr=null;
+    const onStage=(s)=>dzProgress(i, files.length, `${files[i].name} — ${s}`);
     // 429(분당 호출 초과)는 기다렸다 최대 2번까지 재시도
     for(let attempt=0; attempt<3; attempt++){
       try{
-        segs=await extractFlightFromImage(files[i]);
+        segs=await extractFlightFromImage(files[i], onStage);
         lastErr=null;
         break;
       }catch(err){
@@ -661,14 +679,12 @@ async function handleTicketFiles(fileList){
     return;
   }
 
-  const merged=mergeSegments(collected);
-  const dupRemoved=collected.length-merged.length;
+  // 이미 화면에 있던 구간도 함께 합친다 → 재시도해도 앞서 성공한 것이 사라지지 않음
+  const existing=readExistingSegs();
+  const merged=mergeSegments([...existing, ...collected]);
+  const dupRemoved=(existing.length+collected.length)-merged.length;
 
-  // 아직 아무것도 입력 안 한 기본 칸이면 비우고 새로 채움
-  const cards=[...segsEl.querySelectorAll('.flightseg')];
-  const untouched=cards.every(c => !c.querySelector('.s-depDate').value && !c.querySelector('.s-depAir').value.trim());
-  if(untouched) segsEl.innerHTML='';
-
+  segsEl.innerHTML='';
   merged.forEach(s=>{
     const card=segCard(s.label||'');
     segsEl.appendChild(card);
@@ -686,7 +702,26 @@ async function handleTicketFiles(fileList){
   flash(msg);
 
   if(failed.length){
-    setTimeout(()=>showErr(`읽지 못한 파일 ${failed.length}개: ${failed.slice(0,2).join(' / ')}${failed.length>2?' 외':''} — 빠진 구간은 아래에서 직접 추가해 주세요.`), 400);
+    // 실패한 파일 객체를 보관해 두고 그것만 다시 시도할 수 있게 한다
+    FAILED_FILES = files.filter((f,i)=>!status[i].ok);
+    const panel=$('#ticketFallback');
+    panel.style.display='block';
+    const detail=panel.querySelector('#fbDetail');
+    if(detail){
+      detail.style.display='block';
+      detail.innerHTML =
+        `<b>읽지 못한 파일 ${failed.length}개</b><div style="margin-top:5px">`
+        + failed.map(f=>`· <span style="word-break:break-all">${esc(String(f).slice(0,220))}</span>`).join('<br>')
+        + `</div><div style="margin-top:8px; padding-top:7px; border-top:1px solid #E6D2AE">`
+        + `무료 모델은 요청마다 다른 모델이 걸려서 <b>같은 파일도 다시 하면 성공하는 경우가 많습니다.</b>`
+        + `</div>`;
+    }
+    const rb=$('#fbRetryFailed');
+    if(rb){ rb.style.display='inline-block'; rb.textContent=`🔁 실패한 ${FAILED_FILES.length}개만 다시 시도`; }
+  }else{
+    FAILED_FILES=[];
+    const rb=$('#fbRetryFailed'); if(rb) rb.style.display='none';
+    $('#ticketFallback').style.display='none';
   }
   segsEl.scrollIntoView({behavior:'smooth', block:'nearest'});
 }
@@ -734,6 +769,10 @@ $('#ticketFile').addEventListener('change', (e)=>{
 
 /* 인식 실패 안내 패널 버튼 */
 $('#fbRetry').addEventListener('click', ()=>{ $('#ticketFile').click(); });
+$('#fbRetryFailed').addEventListener('click', ()=>{
+  if(!FAILED_FILES.length){ flash('다시 시도할 파일이 없어요.'); return; }
+  handleTicketFiles(FAILED_FILES);
+});
 
 /* 서버 자가 진단 — 어느 단계에서 막혔는지 그대로 보여준다 */
 async function runDiag(targetEl){
@@ -931,10 +970,263 @@ function fileToBase64(file){
     r.readAsDataURL(file);
   });
 }
-async function extractFlightFromImage(file){
-  const imageBase64 = await fileToBase64(file);
-  // 일부 브라우저·OS는 file.type을 비워서 준다 → 확장자로 보정
-  let mimeType = file.type;
+/* ============================================================================
+   항공권 추출 v6.0 — PDF는 브라우저에서 텍스트로 변환 후 전송
+   ----------------------------------------------------------------------------
+   기존:  PDF ──────────────────────────► Worker ──► Gemini Vision
+   변경:  PDF ──► pdf.js ──► 텍스트 ──► Worker ──► Gemini(텍스트)
+
+   · PDF 바이너리를 base64로 보내면 3페이지짜리가 수십만 토큰이 되지만,
+     텍스트만 뽑으면 보통 2~5천 토큰으로 줄어듭니다 (수십 배 절감).
+   · 텍스트가 거의 없는 스캔 PDF만 기존 Vision 경로로 자동 폴백합니다.
+   · 이미지(JPG/PNG)는 기존 Vision 방식 그대로 유지합니다.
+   ========================================================================== */
+
+/* pdf.js는 jsdelivr(npm 미러)에서 가져옵니다.
+   ⚠ cMapUrl / standardFontDataUrl 을 반드시 지정해야 합니다.
+     이게 없으면 폰트가 embed되지 않은 PDF(ANA e-티켓 등)와 한국어·일본어 PDF에서
+     텍스트가 0자로 나와 불필요하게 Vision으로 넘어갑니다. (실측으로 확인) */
+const PDFJS_VER    = '3.11.174';
+const PDFJS_BASE   = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${PDFJS_VER}/`;
+const PDFJS_SRC    = PDFJS_BASE+'build/pdf.min.js';
+const PDFJS_WORKER = PDFJS_BASE+'build/pdf.worker.min.js';
+const PDFJS_CMAPS  = PDFJS_BASE+'cmaps/';
+const PDFJS_FONTS  = PDFJS_BASE+'standard_fonts/';
+const PDF_TEXT_MIN = 120;   // 이 글자 수 미만이면 스캔본으로 보고 Vision 폴백
+
+/* getDocument 공통 옵션 */
+function pdfDocOptions(buf){
+  return {
+    data: buf,
+    isEvalSupported: false,
+    cMapUrl: PDFJS_CMAPS,
+    cMapPacked: true,
+    standardFontDataUrl: PDFJS_FONTS,
+    useSystemFonts: true,
+  };
+}
+
+let _pdfjsPromise=null;
+function loadPdfJs(){
+  if(window.pdfjsLib){
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc=PDFJS_WORKER;
+    return Promise.resolve(window.pdfjsLib);
+  }
+  if(_pdfjsPromise) return _pdfjsPromise;
+  _pdfjsPromise=new Promise((resolve,reject)=>{
+    const s=document.createElement('script');
+    s.src=PDFJS_SRC;
+    s.onload=()=>{
+      if(!window.pdfjsLib){ reject(new Error('pdf.js 로드 실패')); return; }
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc=PDFJS_WORKER;
+      resolve(window.pdfjsLib);
+    };
+    s.onerror=()=>reject(new Error('pdf.js를 내려받지 못했습니다 (네트워크 확인).'));
+    document.head.appendChild(s);
+  });
+  return _pdfjsPromise;
+}
+
+/* PDF → 텍스트. 줄 단위로 재구성해 표 형태를 최대한 보존한다. */
+async function pdfToText(file){
+  const pdfjsLib=await loadPdfJs();
+  const buf=await file.arrayBuffer();
+  const pdf=await pdfjsLib.getDocument(pdfDocOptions(buf)).promise;
+
+  const pages=[];
+  const maxPages=Math.min(pdf.numPages, 12);
+  for(let p=1;p<=maxPages;p++){
+    const page=await pdf.getPage(p);
+    const tc=await page.getTextContent();
+
+    // y좌표로 줄을 묶어야 "OSLO GARDERMOEN | DY528 | 09:50" 같은 표가 한 줄로 붙는다
+    const lines=new Map();
+    for(const it of tc.items){
+      const t=(it.str||'');
+      if(!t.trim()) continue;
+      const y=Math.round((it.transform&&it.transform[5])||0);
+      const key=Math.round(y/3)*3;            // 3pt 오차 허용
+      if(!lines.has(key)) lines.set(key,[]);
+      lines.get(key).push({x:(it.transform&&it.transform[4])||0, t});
+    }
+    const ordered=[...lines.entries()]
+      .sort((a,b)=>b[0]-a[0])                 // 위 → 아래
+      .map(([,parts])=>parts.sort((a,b)=>a.x-b.x).map(o=>o.t).join(' ')
+        .replace(/\s{2,}/g,' ').trim())
+      .filter(Boolean);
+    pages.push(`--- PAGE ${p} ---\n`+ordered.join('\n'));
+    page.cleanup && page.cleanup();
+  }
+  pdf.destroy && pdf.destroy();
+  return pages.join('\n\n');
+}
+
+/* ---- Regex 사전 스캔 ----
+   Gemini가 놓치거나 헷갈릴 수 있는 항목을 미리 뽑아 힌트로 함께 보낸다.
+   (Gemini는 이 힌트를 참고만 하고, 최종 판단은 원문 기준으로 한다) */
+/* ---- Regex 사전 스캔 (실제 34종 항공권으로 검증) ----
+   항공사마다 표기가 제각각이라 아래 변형을 모두 처리합니다.
+     편명   KE 733 / OZ 116 / NH868 / AM 645 / QF471 / JL5206
+     시각   19:10 / 1955(4자리) / 11:10am / 5:00PM / 1700, 5:00PM
+     날짜   28FEB / 29 Oct 23 / 04 MAR 24 / 31AUG2019 / 05JUN25 / 2026-08-14
+   Gemini에는 "힌트"로만 전달되며, 최종 판단은 원문 기준입니다. */
+const IATA_STOP=new Set([
+  'PDF','THE','AND','FOR','YOU','MRS','ADT','CHD','INF','NOT','ALL','ANY','ARE','WAS',
+  'TAX','FEE','SEQ','ROW','PCS','KGS','NUC','ROE','END','VIA','OPE','REF','APT','SEE',
+  'OUR','CAN','NON','AIR','WWW','COM','NET','ORG','MAY','ONE','TWO','NEW','OLD','ETC',
+  'API','GDS','ITR','IDS','USD','KRW','EUR','JPY','NOK','MVA','TEL','MIN','MAX','LTD',
+  'SUN','MON','TUE','WED','THU','FRI','SAT','JAN','FEB','MAR','APR','JUN','JUL','AUG',
+  'SEP','OCT','NOV','DEC','LOW','FLE','ITE','NAM','SHO','MUS','PER','PAY','ADD','GET',
+  'HAS','HIS','HER','ITS','OFF','OUT','PRE','PRO','SUB','TOP','USE','WAY','YES','SET',
+  'AMT','QTY','SEG','SVC','DOC','NUM','TYP','CLS','PAX','FOP','TKT','RES','STD','STA',
+  'EST','INT','DOM','ARR','DEP','GMT','UTC','CST','EST','PST','KST','JST','AMS','PMS',
+  'BAG','KGS','LBS','CHG','FLT','OPR','MKT','AGT','IAT','VAT','RFC','SAS','ISS','PLC',
+]);
+
+/* 항공사 2레터 코드 — 편명 오검출을 줄이기 위한 화이트리스트(주요 항공사) */
+const AIRLINE_CODES=new Set([
+  'KE','OZ','LJ','TW','BX','ZE','7C','RS','YP',            // 한국
+  'JL','NH','MM','GK','BC','IJ','NQ','7G',                  // 일본
+  'CA','CZ','MU','HU','3U','9C','MF','SC','ZH','GS','KN',   // 중국
+  'CX','KA','BR','CI','JX','SQ','TR','MI','TG','FD','PG',   // 아시아
+  'MH','AK','D7','OD','GA','QG','JT','ID','VN','VJ','QH',
+  'PR','5J','Z2','AI','UK','6E','SG','G8','UL','BG','PK',
+  'AA','UA','DL','WN','AS','B6','NK','F9','G4','HA','SY',   // 미주
+  'AC','WS','TS','PD','AM','Y4','VB','4O','CM','AV','LA',
+  'JJ','G3','AD','AR','H2','VH','O6','P5',
+  'BA','AF','KL','LH','LX','OS','SN','IB','UX','VY','FR',   // 유럽
+  'U2','W6','AY','SK','DY','D8','TP','AZ','LO','OK',
+  'RO','JU','A3','OA','FB','PS','SU','S7','U6','TK','PC',
+  'EK','EY','QR','SV','GF','WY','RJ','ME','MS','AT','TU',   // 중동·아프리카
+  'ET','KQ','SA','LY','W3','J2','KC','HY','B2',
+  'QF','JQ','VA','NZ','FJ','PX','IE','SB','TN',             // 오세아니아
+]);
+
+function prescanFlightText(text){
+  const uniq=a=>[...new Set(a)];
+
+  /* --- 편명: "KE 733"처럼 공백이 들어가는 항공사(대한항공·아시아나·아에로멕시코 등)도 인식 --- */
+  const flights=[];
+  // 기종 표기(Airbus A380-800, Boeing 777-300ER)가 편명으로 잡히지 않도록 문맥을 본다
+  const AIRCRAFT_CTX=/(기종|Aircraft|Airbus|Boeing|Equipment|Type)\s*[:：]?\s*$/i;
+  const AIRCRAFT_PAT=/^(A2\d{2}|A3\d{2}|A350|A380|B7\d{2}|B6\d{2}|E1\d{2}|CR\d{2}|AT\d{2})$/;
+  const fRe=/\b([A-Z]{2}|[0-9][A-Z]|[A-Z][0-9])[ \t]?(\d{2,4})\b/g;
+  let fm;
+  while((fm=fRe.exec(text))!==null){
+    const code=fm[1].toUpperCase();
+    if(!AIRLINE_CODES.has(code)) continue;          // 화이트리스트로 오검출 차단
+    const token=code+fm[2];
+    if(AIRCRAFT_PAT.test(token)) continue;          // A380 / B777 등 기종 제외
+
+    const before=text.slice(Math.max(0,fm.index-28), fm.index);
+    if(AIRCRAFT_CTX.test(before)) continue;         // "기종: ..." 바로 뒤면 기종
+    // "J/OK 1205" — OK는 예약상태(확약), 1205는 시각이다
+    if(/[/\-]$/.test(before)) continue;
+    // "QF 001 - 399" 처럼 범위를 설명하는 문구(터미널 안내 등)
+    const after=text.slice(fm.index+fm[0].length, fm.index+fm[0].length+12);
+    if(/^\s*[-–~]\s*\d{2,4}/.test(after)) continue;
+
+    flights.push(token);                             // "KE 733" → "KE733" 정규화
+  }
+
+  /* --- IATA 3자리 (원문에서 이미 대문자인 토큰만) --- */
+  const iata=uniq((text.match(/\b[A-Z]{3}\b/g)||[]).filter(c=>!IATA_STOP.has(c)));
+
+  /* --- 시각 --- */
+  const times=[];
+  // 19:10 / 11:10am / 5:00PM
+  for(const m of text.matchAll(/\b([01]?\d|2[0-3]):([0-5]\d)\s*([AaPp]\.?[Mm]\.?)?/g)){
+    let h=parseInt(m[1],10); const mi=m[2]; const ap=(m[3]||'').toLowerCase();
+    if(ap.startsWith('p') && h!==12) h+=12;
+    if(ap.startsWith('a') && h===12) h=0;
+    times.push(String(h).padStart(2,'0')+':'+mi);
+  }
+  // 1955 / 2215 처럼 콜론 없는 4자리 (ANA e-티켓)
+  for(const m of text.matchAll(/(?:^|[\s(])([01]\d|2[0-3])([0-5]\d)(?=[\s,)]|$)/gm)){
+    times.push(m[1]+':'+m[2]);
+  }
+
+  /* --- 날짜 --- */
+  const dates=uniq([
+    ...(text.match(/\b\d{1,2}[A-Za-z]{3}\d{2,4}\b/g)||[]),          // 14AUG26 / 31AUG2019
+    ...(text.match(/\b\d{1,2}\s+[A-Za-z]{3}\s+\d{2,4}\b/g)||[]),    // 29 Oct 23 / 04 MAR 24
+    ...(text.match(/\b[A-Za-z]{3}\s+\d{1,2},?\s+\d{2,4}\b/g)||[]),  // Oct 29, 2023
+    ...(text.match(/\b\d{4}[-./]\d{1,2}[-./]\d{1,2}\b/g)||[]),      // 2026-08-14
+    ...(text.match(/\b\d{1,2}[-./]\d{1,2}[-./]\d{2,4}\b/g)||[]),    // 14/08/2026
+    ...(text.match(/\b\d{1,2}[A-Za-z]{3}\b(?!\d)/g)||[]),           // 28FEB (연도 없음)
+  ]);
+
+  /* --- 예약번호(PNR) — 라벨 뒤에 다른 라벨 단어가 끼어드는 경우까지 처리 --- */
+  const PNR_LABEL_WORDS=new Set(['BOOKING','REFERENCE','REF','NUMBER','NO','CODE','PNR','RECORD','LOCATOR','RESERVATION']);
+  const pnr=[];
+  const pnrRe=/(?:Booking\s*ref(?:erence)?|예약\s*번호|예약번호|PNR|Record\s*Locator|Reservation)\s*[:：]?\s*((?:[A-Za-z0-9]+[ \t]*){1,4})/gi;
+  let m;
+  while((m=pnrRe.exec(text))!==null){
+    for(const tok of m[1].trim().split(/[ \t]+/)){
+      const t=tok.toUpperCase();
+      if(PNR_LABEL_WORDS.has(t)) continue;
+      if(t.length<5 || t.length>7) continue;
+      if(!/^[A-Z0-9]+$/.test(t)) continue;
+      if(!/[A-Z]/.test(t)) continue;                 // 숫자만인 것은 티켓번호일 가능성
+      pnr.push(t); break;
+    }
+  }
+  // 괄호형 PNR: "(UDR8V2)" / "(5Z9CC6)"
+  for(const g of text.matchAll(/\(([A-Z0-9]{6})\)/g)){
+    if(/[A-Z]/.test(g[1]) && /\d/.test(g[1])) pnr.push(g[1]);
+  }
+
+  return {
+    flights: uniq(flights),
+    iata,
+    times: uniq(times),
+    dates,
+    pnr: uniq(pnr),
+  };
+}
+
+/* ---- 스캔 PDF(텍스트 레이어 없음) → 페이지를 이미지로 렌더링 ----
+   PDF 원본을 통째로 보내면 3페이지가 base64로 1.1MB나 되지만,
+   페이지별 JPEG로 렌더하면 장당 약 200KB로 줄고 한 장씩 나눠 보낼 수 있어
+   컨텍스트 한계에 걸리지 않습니다. */
+async function pdfToPageImages(file, maxPages=6){
+  const pdfjsLib=await loadPdfJs();
+  const buf=await file.arrayBuffer();
+  const pdf=await pdfjsLib.getDocument(pdfDocOptions(buf)).promise;
+  const out=[];
+  const n=Math.min(pdf.numPages, maxPages);
+
+  for(let p=1;p<=n;p++){
+    const page=await pdf.getPage(p);
+    const base=page.getViewport({scale:1});
+    // 가로 1600px 기준 배율 — 글자 판독에 충분하면서 용량은 작게
+    const scale=Math.min(2.2, Math.max(1.1, 1600/base.width));
+    const vp=page.getViewport({scale});
+
+    const canvas=document.createElement('canvas');
+    canvas.width=Math.round(vp.width);
+    canvas.height=Math.round(vp.height);
+    const ctx=canvas.getContext('2d');
+    ctx.fillStyle='#fff';
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+    await page.render({canvasContext:ctx, viewport:vp}).promise;
+
+    out.push((canvas.toDataURL('image/jpeg', 0.82).split(',')[1])||'');
+    canvas.width=canvas.height=0;   // 메모리 해제
+    page.cleanup && page.cleanup();
+  }
+  pdf.destroy && pdf.destroy();
+  return out;
+}
+
+/* 항공권 인식
+   PDF(텍스트 있음) → 텍스트만 전송 (Vision 미사용)
+   PDF(스캔본)      → 페이지별 이미지로 렌더해 한 장씩 인식
+   이미지           → 기존 Vision */
+async function extractFlightFromImage(file, onStage){
+  const stage=(s)=>{ try{ onStage && onStage(s); }catch{} };
+
+  let mimeType=file.type;
   if(!mimeType){
     const ext=(file.name||'').toLowerCase().split('.').pop();
     mimeType = ext==='pdf' ? 'application/pdf'
@@ -943,7 +1235,72 @@ async function extractFlightFromImage(file){
       : ext==='heic' ? 'image/heic'
       : 'image/jpeg';
   }
-  const data = await callWorkerRaw({ action:'extractFlight', imageBase64, mimeType }, 90000);
+
+  const isPdf = /pdf/i.test(mimeType) || /\.pdf$/i.test(file.name||'');
+
+  if(isPdf){
+    let text='';
+    try{ stage('PDF 텍스트 추출 중'); text=await pdfToText(file); }
+    catch(e){ console.warn('pdf.js 텍스트 추출 실패:', e); }
+
+    if(text.replace(/\s/g,'').length>=PDF_TEXT_MIN){
+      // ✅ 경로 A — 텍스트만 전송
+      stage('항공편 해석 중');
+      const data=await callWorkerRaw({
+        action:'extractFlight',
+        text,
+        hints:prescanFlightText(text),
+        sourceName:file.name||'',
+      }, 90000);
+      return Array.isArray(data.segments) ? data.segments : [];
+    }
+
+    // ✅ 경로 B — 스캔 PDF: 페이지를 이미지로 렌더해 한 장씩
+    //   실제 e-티켓 34종을 확인해보니 여정표는 거의 항상 1~2페이지에 있고
+    //   뒷장은 약관·수하물 규정입니다. 그래서 앞 3장을 먼저 보고,
+    //   구간을 하나도 못 찾았을 때만 뒷장까지 확장합니다 (API 호출 절약).
+    stage('스캔 PDF → 페이지 이미지 변환 중');
+    let pages=[];
+    try{ pages=await pdfToPageImages(file, 8); }
+    catch(e){ console.warn('페이지 렌더 실패:', e); }
+
+    if(pages.length){
+      const all=[]; const errs=[];
+      const firstPass=Math.min(3, pages.length);
+
+      const runPage=async(i)=>{
+        stage(`스캔 페이지 인식 ${i+1}/${pages.length}`);
+        try{
+          const d=await callWorkerRaw({
+            action:'extractFlight',
+            imageBase64:pages[i],
+            mimeType:'image/jpeg',
+            pageInfo:{page:i+1, total:pages.length},
+            sourceName:file.name||'',
+          }, 90000);
+          if(Array.isArray(d.segments)) all.push(...d.segments);
+        }catch(e){ errs.push(`p${i+1}: ${e.message||e}`); }
+      };
+
+      for(let i=0;i<firstPass;i++) await runPage(i);
+
+      // 앞 3장에서 아무것도 못 찾았으면 나머지 페이지도 확인
+      if(!all.length && pages.length>firstPass){
+        for(let i=firstPass;i<pages.length;i++){
+          await runPage(i);
+          if(all.length) break;   // 찾는 즉시 중단
+        }
+      }
+
+      if(all.length) return all;
+      throw new Error(`스캔 PDF 인식 실패 — ${errs.slice(0,2).join(' / ')||'구간을 찾지 못함'}`);
+    }
+  }
+
+  // 이미지 파일 → 기존 Vision
+  stage('이미지 인식 중');
+  const imageBase64=await fileToBase64(file);
+  const data=await callWorkerRaw({ action:'extractFlight', imageBase64, mimeType }, 90000);
   return Array.isArray(data.segments) ? data.segments : [];
 }
 
@@ -1413,7 +1770,7 @@ renderHistory(); // 페이지 열릴 때 최근 일정 목록 표시
    sw.js의 CACHE_NAME(예: 'ykh-travel-v4')과 항상 같은 v번호로 맞춰서 올리세요.
    화면 맨 아래 버전이 배포 후 바뀌었으면 새 코드가 실제로 반영된 것이고,
    그대로면 브라우저/SW 캐시가 옛 파일을 물고 있다는 뜻입니다. */
-const APP_VERSION = 'v5.5';
+const APP_VERSION = 'v6.1';
 document.getElementById('appVersion').textContent = 'YKH 여정 설계소 ' + APP_VERSION;
 
 /* ---------- PWA: 서비스 워커 등록 + 업데이트 감지 ---------- */
