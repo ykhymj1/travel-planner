@@ -774,8 +774,10 @@ async function handleTicketFiles(fileList){
       }catch(err){
         lastErr=err;
         const msg=String(err.message||err);
-        const rateLimited=/429|RESOURCE_EXHAUSTED|quota|rate/i.test(msg);
-        if(!rateLimited || attempt===2) break;
+        // ⚠ 하루 한도·크레딧 소진은 기다려도 안 풀린다 → 즉시 중단 (무한 대기 방지)
+        const dailyGone=/하루 한도|하루 50|per day|PerDay|daily|402|insufficient|크레딧|소진/i.test(msg);
+        const rateLimited=/429|RESOURCE_EXHAUSTED|분당|per minute|rate limit/i.test(msg);
+        if(dailyGone || !rateLimited || attempt===2) break;
         const wait=(attempt+1)*20;
         for(let s=wait; s>0; s--){
           dzProgress(i, files.length, `호출 한도 대기 ${s}초… (${files[i].name})`);
@@ -1282,21 +1284,24 @@ function parseGeminiQuota(bodyText){
   return { per, delay, limit, model };
 }
 
-async function geminiFetchOnce(prompt, maxTokens, timeoutMs, model){
+async function geminiFetchOnce(prompt, maxTokens, timeoutMs, model, inline){
   const key=geminiKey();
   const ctrl=new AbortController();
   const timer=setTimeout(()=>ctrl.abort(), timeoutMs||60000);
   try{
+    const parts=[{text:prompt}];
+    // inline = {data: base64, mimeType} — 항공권 이미지/스캔 페이지용
+    if(inline && inline.data) parts.push({inlineData:{mimeType:inline.mimeType||'image/jpeg', data:inline.data}});
     const res=await fetch(`${GEMINI_URL(model)}?key=${encodeURIComponent(key)}`,{
       method:'POST',
       headers:{'Content-Type':'application/json'},   // 커스텀 헤더 금지 (CORS preflight 실패 원인)
       body:JSON.stringify({
-        contents:[{role:'user',parts:[{text:prompt}]}],
+        contents:[{role:'user',parts}],
         generationConfig:{
           maxOutputTokens:maxTokens||8192,
-          temperature:0.7,
+          temperature: inline ? 0.05 : 0.7,
           responseMimeType:'application/json',
-          thinkingConfig:{ thinkingBudget: Math.min(2048, Math.floor((maxTokens||8192)/6)) },
+          thinkingConfig:{ thinkingBudget: inline ? 0 : Math.min(2048, Math.floor((maxTokens||8192)/6)) },
         },
       }),
       signal:ctrl.signal,
@@ -1375,7 +1380,7 @@ function bumpUsage(n){
 }
 function todayUsage(){ return parseInt(store.get(usageKeyToday())||'0',10); }
 
-async function callGeminiBrowser(prompt, maxTokens, timeoutMs){
+async function callGeminiBrowser(prompt, maxTokens, timeoutMs, inline){
   if(!geminiKey()) throw new Error('Gemini API 키가 없습니다.');
   const chain=geminiFallbackChain();
   let dayExhausted=[];
@@ -1386,7 +1391,7 @@ async function callGeminiBrowser(prompt, maxTokens, timeoutMs){
     for(let attempt=0; attempt<3; attempt++){
       try{
         await throttleGemini(model);          // 분당 한도에 걸리기 전에 미리 간격 확보
-        const r=await geminiFetchOnce(prompt, maxTokens, timeoutMs, model);
+        const r=await geminiFetchOnce(prompt, maxTokens, timeoutMs, model, inline);
         bumpUsage(1);
         if(mi>0) notice(`${model}로 처리했어요`);
         return r;
@@ -1964,10 +1969,89 @@ function dropIssueDates(segs, hints){
   return segs;
 }
 
+/* ---- 항공권 추출 프롬프트 (브라우저 직접용) ---- */
+function flightPromptText(text, hints, sourceName){
+  const h=hints||{};
+  const hintBlock=[
+    h.flights&&h.flights.length?`편명 후보: ${h.flights.join(', ')}`:'',
+    h.iata&&h.iata.length?`공항코드 후보: ${h.iata.slice(0,30).join(', ')}`:'',
+    h.dates&&h.dates.length?`비행 날짜 후보: ${h.dates.join(', ')}`:'',
+    h.issueDates&&h.issueDates.length?`⛔ 발권일(비행 날짜 아님 — 절대 출발/도착일로 쓰지 말 것): ${h.issueDates.join(', ')}`:'',
+    h.times&&h.times.length?`시각 후보: ${h.times.slice(0,40).join(', ')}`:'',
+    h.pnr&&h.pnr.length?`예약번호 후보: ${h.pnr.join(', ')}`:'',
+  ].filter(Boolean).join('\n');
+
+  return `아래는 항공권/전자티켓 PDF에서 추출한 **텍스트**다 (OCR은 이미 끝났다).
+글자를 읽는 일이 아니라, 이 텍스트를 해석해 **비행 구간을 구조화**하는 일만 하면 된다.
+
+${hintBlock?`[정규식으로 미리 찾아둔 후보 — 참고용, 최종 판단은 원문 기준]\n${hintBlock}\n`:''}
+[원문 텍스트]${sourceName?` (파일: ${sourceName})`:''}
+${text.length>60000?text.slice(0,60000)+'\n…(이하 생략)':text}
+
+⛔⛔ 날짜 절대 규칙 ⛔⛔
+· 날짜를 절대 추측하지 마라. 문서에 명시된 날짜만 쓴다.
+· 발권일("Date :", "Issue Date", "발권일", "발행일" 뒤의 날짜)을 비행 날짜로 쓰지 마라.
+· 찾을 수 없으면 depDate/arrDate를 빈 문자열("")로 두어라. 틀린 날짜보다 빈 칸이 훨씬 낫다.
+
+[해석 규칙]
+· TOPAS e-티켓: 좌측 1,2,3… 번호 블록이 각각 한 구간. "14AUG26(FRI)18:35" → 2026-08-14 18:35.
+· 대한항공/아시아나: "ICN LAX KE 011"처럼 **편명에 공백**이 있다(KE 011 = KE011).
+· ANA: "NH868 05JUN25 THU 1955" — **콜론 없는 4자리 시각**(1955 = 19:55).
+· Norwegian 등: From/To/Flight/Departure/Arrival 표의 각 행이 한 구간.
+  "PURCHASED PRODUCTS"(수수료) 구역은 비행 구간이 아니다.
+· "11:10am / 1:15pm" 은 24시간제로 변환(1:15pm = 13:15).
+· 기종(Airbus A380, Boeing 777)을 편명으로 착각하지 마라.
+· 약관·수하물·환불 규정에서 구간을 만들어내지 마라.
+
+[출력 규칙]
+· depDate/arrDate는 "YYYY-MM-DD" 형식. 없으면 "".
+· airline에는 "항공사명 + 편명 + 좌석등급"을 한 문자열로. **편명 반드시 포함**.
+· depAir/arrAir는 도시+공항명, 터미널 있으면 함께.
+· label은 짧게: "출국", "나리타 경유", "국내선 이동", "귀국".
+
+반드시 아래 JSON 객체만 출력:
+{"segments":[{"label":"","passenger":"","depDate":"YYYY-MM-DD","depTime":"HH:MM","depAir":"","arrDate":"YYYY-MM-DD","arrTime":"HH:MM","arrAir":"","airline":""}]}`;
+}
+
+function flightPromptImage(pageInfo, sourceName){
+  const pg=pageInfo;
+  const note=pg&&pg.total>1
+    ? `\n[중요] 총 ${pg.total}페이지 중 ${pg.page}번째 페이지다.
+· 이 페이지에 **보이는 구간만** 추출하라.
+· 유의사항·약관·수하물 규정·운임 정보처럼 항공편 표가 없는 페이지라면
+  {"segments":[]} 를 출력하는 것이 **정답**이다. 억지로 만들어내지 마라.`
+    : '';
+  return `이 항공권/전자티켓 이미지에서 비행 구간을 모두 추출하라.${sourceName?` (파일: ${sourceName})`:''}${note}
+
+⛔ 날짜를 추측하지 마라. 발권일("Date :", "Issue Date", "발권일")을 비행 날짜로 쓰지 마라.
+   찾을 수 없으면 빈 문자열("")로 둔다.
+· TOPAS e-티켓은 좌측 1,2,3… 번호 블록이 각각 한 구간이다.
+· 편명에 공백이 있을 수 있다(KE 011 = KE011).
+· depDate/arrDate는 "YYYY-MM-DD" 형식.
+· airline에 "항공사명 + 편명 + 좌석등급"을 한 문자열로, 편명 반드시 포함.
+
+반드시 아래 JSON 객체만 출력:
+{"segments":[{"label":"","passenger":"","depDate":"YYYY-MM-DD","depTime":"HH:MM","depAir":"","arrDate":"YYYY-MM-DD","arrTime":"HH:MM","arrAir":"","airline":""}]}`;
+}
+
+function parseSegsBrowser(raw){
+  try{
+    const o=JSON.parse(stripFence(raw));
+    for(const k of ['segments','flights','items','data','result']){
+      if(Array.isArray(o[k])) return o[k];
+    }
+    if(Array.isArray(o)) return o;
+  }catch{}
+  try{ const a=JSON.parse(stripFence(raw)); if(Array.isArray(a)) return a; }catch{}
+  return null;
+}
+
 /* 항공권 인식
    PDF(텍스트 있음) → 텍스트만 전송 (Vision 미사용)
    PDF(스캔본)      → 페이지별 이미지로 렌더해 한 장씩 인식
-   이미지           → 기존 Vision */
+   이미지           → 기존 Vision
+   ※ Gemini 키가 있으면 Worker를 거치지 않고 브라우저에서 직접 처리합니다.
+     (Worker 경유는 지역차단 + OpenRouter 하루 50회 한도에 막히기 때문) */
 async function extractFlightFromImage(file, onStage){
   const stage=(s)=>{ try{ onStage && onStage(s); }catch{} };
 
@@ -1992,13 +2076,15 @@ async function extractFlightFromImage(file, onStage){
       // ✅ 경로 A — 텍스트만 전송
       stage('항공편 해석 중');
       const hints=prescanFlightText(text);
-      const data=await callWorkerRaw({
-        action:'extractFlight',
-        text,
-        hints,
-        sourceName:file.name||'',
-      }, 90000);
-      const segs=Array.isArray(data.segments) ? data.segments : [];
+      let segs;
+      if(browserMode()){
+        // 브라우저에서 Gemini 직접 호출 — 지역차단·OpenRouter 한도와 무관
+        const raw=await callGeminiBrowser(flightPromptText(text, hints, file.name), 8192, 90000);
+        segs=parseSegsBrowser(raw)||[];
+      }else{
+        const data=await callWorkerRaw({action:'extractFlight', text, hints, sourceName:file.name||''}, 90000);
+        segs=Array.isArray(data.segments) ? data.segments : [];
+      }
       return dropIssueDates(segs, hints);
     }
 
@@ -2019,20 +2105,26 @@ async function extractFlightFromImage(file, onStage){
         for(let attempt=0; attempt<3; attempt++){
           stage(`스캔 페이지 인식 ${i+1}/${pages.length}`+(attempt?` (재시도 ${attempt})`:''));
           try{
-            const d=await callWorkerRaw({
-              action:'extractFlight',
-              imageBase64:pages[i],
-              mimeType:'image/jpeg',
-              pageInfo:{page:i+1, total:pages.length},
-              sourceName:file.name||'',
-            }, 90000);
-            if(Array.isArray(d.segments)) all.push(...d.segments);
-            if(d.empty) emptyPages.push(i+1);   // 약관 페이지 등 — 실패가 아님
+            const pageInfo={page:i+1, total:pages.length};
+            let segs;
+            if(browserMode()){
+              const raw=await callGeminiBrowser(flightPromptImage(pageInfo, file.name), 8192, 90000,
+                {data:pages[i], mimeType:'image/jpeg'});
+              segs=parseSegsBrowser(raw)||[];
+            }else{
+              const d=await callWorkerRaw({action:'extractFlight', imageBase64:pages[i],
+                mimeType:'image/jpeg', pageInfo, sourceName:file.name||''}, 90000);
+              segs=Array.isArray(d.segments)?d.segments:[];
+              if(d.empty) emptyPages.push(i+1);
+            }
+            if(segs.length) all.push(...segs);
+            else emptyPages.push(i+1);          // 약관 페이지 등 — 실패가 아님
             return true;                        // 구간 0개여도 호출 자체는 성공
           }catch(e){
             const msg=String(e.message||e);
-            const rate=/429|RESOURCE_EXHAUSTED|quota|rate|한도/i.test(msg);
-            if(!rate || attempt===2){ errs.push(`p${i+1}: ${msg}`); failedPages.push(i+1); return false; }
+            const dailyGone=/하루 한도|하루 50|per day|PerDay|daily|402|insufficient|크레딧|소진/i.test(msg);
+            const rate=/429|RESOURCE_EXHAUSTED|분당|per minute|rate limit/i.test(msg);
+            if(dailyGone || !rate || attempt===2){ errs.push(`p${i+1}: ${msg}`); failedPages.push(i+1); return false; }
             const wait=(attempt+1)*20;
             for(let sec=wait; sec>0; sec--){
               stage(`호출 한도 대기 ${sec}초 — 페이지 ${i+1}/${pages.length}`);
@@ -2078,6 +2170,11 @@ async function extractFlightFromImage(file, onStage){
   // 이미지 파일 → 기존 Vision
   stage('이미지 인식 중');
   const imageBase64=await fileToBase64(file);
+  if(browserMode()){
+    const raw=await callGeminiBrowser(flightPromptImage(null, file.name), 8192, 90000,
+      {data:imageBase64, mimeType});
+    return parseSegsBrowser(raw)||[];
+  }
   const data=await callWorkerRaw({ action:'extractFlight', imageBase64, mimeType }, 90000);
   return Array.isArray(data.segments) ? data.segments : [];
 }
@@ -2583,7 +2680,7 @@ renderHistory(); // 페이지 열릴 때 최근 일정 목록 표시
    sw.js의 CACHE_NAME(예: 'ykh-travel-v4')과 항상 같은 v번호로 맞춰서 올리세요.
    화면 맨 아래 버전이 배포 후 바뀌었으면 새 코드가 실제로 반영된 것이고,
    그대로면 브라우저/SW 캐시가 옛 파일을 물고 있다는 뜻입니다. */
-const APP_VERSION = 'v7.5';
+const APP_VERSION = 'v7.6';
 document.getElementById('appVersion').textContent = 'YKH 여정 설계소 ' + APP_VERSION;
 
 /* ---------- PWA: 서비스 워커 등록 + 업데이트 감지 ---------- */
