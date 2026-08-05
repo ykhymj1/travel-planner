@@ -7,7 +7,7 @@
    고쳐도 사용자 화면에는 반영이 안 됩니다. index.html 맨 아래 APP_VERSION도
    반드시 같은 번호로 같이 올려주세요 — 화면 하단 버전 표시로 실제 반영 여부를 확인할 수 있습니다. */
 
-const CACHE_NAME = 'ykh-travel-v7-7';
+const CACHE_NAME = 'ykh-travel-v7-8';
 const PRECACHE_URLS = [
   './',
   './index.html',
