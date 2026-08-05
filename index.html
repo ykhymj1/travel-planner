@@ -1255,7 +1255,7 @@ function computePeriod(){
   const lastArr=airCode(segs[segs.length-1] && segs[segs.length-1].arrAir);
   if(segs.length>=2 && firstDep && lastArr && firstDep!==lastArr){
     chip.classList.add('warn');
-    txt.innerHTML += `<br><span class="d" style="color:#A05A00">⚠️ 출발지(${esc(segs[0].depAir)})와 최종 도착지(${esc(segs[segs.length-1].arrAir)})가 달라요. 귀국편이 빠지지 않았는지 확인해 주세요.</span>`;
+    txt.innerHTML += `<br><span class="d" style="color:#FFDDA0">⚠️ 출발지(${esc(segs[0].depAir)})와 최종 도착지(${esc(segs[segs.length-1].arrAir)})가 달라요. 귀국편이 빠지지 않았는지 확인해 주세요.</span>`;
   }
 }
 
@@ -2885,7 +2885,13 @@ function buildRtfDoc(p){
 function safeName(s){ return (s||'여행일정').replace(/[\\/:*?"<>|]/g,' ').replace(/\s+/g,'_').slice(0,60); }
 function downloadDoc(){
   const rtf=buildRtfDoc(LAST);
-  const blob=new Blob(['\ufeff'+rtf], {type:'application/rtf'});
+  // ⚠ RTF는 반드시 '{\rtf1' 로 시작해야 합니다. 앞에 BOM(\ufeff)을 붙이면
+  //   Word·구글독스는 알아서 건너뛰고 열지만, 한컴오피스(한글/한워드)처럼
+  //   엄격하게 파싱하는 프로그램은 "이건 RTF가 아니다"로 판단해 파일을
+  //   일반 텍스트로 취급해 버립니다. 그 결과 \pard\b\fs32 나 \u10948? 같은
+  //   RTF 제어 코드가 글자 그대로 화면에 찍혀 보이는 것입니다(실제로 겪은 사례).
+  //   BOM 없이 순수 RTF 바이트로만 저장하면 모든 프로그램에서 정상적으로 열립니다.
+  const blob=new Blob([rtf], {type:'application/rtf'});
   const url=URL.createObjectURL(blob);
   const a=document.createElement('a');
   a.href=url; a.download=safeName(LAST.title)+'.rtf';
@@ -3011,7 +3017,7 @@ renderHistory(); // 페이지 열릴 때 최근 일정 목록 표시
    sw.js의 CACHE_NAME(예: 'ykh-travel-v4')과 항상 같은 v번호로 맞춰서 올리세요.
    화면 맨 아래 버전이 배포 후 바뀌었으면 새 코드가 실제로 반영된 것이고,
    그대로면 브라우저/SW 캐시가 옛 파일을 물고 있다는 뜻입니다. */
-const APP_VERSION = 'v8.0';
+const APP_VERSION = 'v8.1';
 document.getElementById('appVersion').textContent = 'YKH 여정 설계소 ' + APP_VERSION;
 
 /* ---------- PWA: 서비스 워커 등록 + 업데이트 감지 ---------- */
