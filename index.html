@@ -1517,8 +1517,13 @@ async function geminiFetchOnce(prompt, maxTokens, timeoutMs, model, inline){
     }
     if(!res.ok){
       const t=await res.text().catch(()=> '');
-      if(res.status===400 && /API key/i.test(t)) throw new Error('Gemini API 키가 올바르지 않습니다. 설정에서 확인해 주세요.');
-      throw new Error(`Gemini 오류 ${res.status}: ${t.slice(0,200)}`);
+      if(res.status===400 && /API key|API_KEY_INVALID/i.test(t)) throw new Error('Gemini API 키가 올바르지 않습니다. 설정에서 확인해 주세요.');
+      // ⚠ 모델마다 지원 범위가 다릅니다(이미지 입력·JSON 강제출력·thinking 옵션 등).
+      //   특정 모델이 이 요청을 거부해도(400/403/500 등) 다른 모델은 처리할 수 있으므로
+      //   여기서 바로 포기하지 않고 다음 모델로 넘어가도록 표시만 해둡니다.
+      //   (실제로 스캔 항공권 이미지 인식에서 1순위 모델만 400을 내는 사례가 있었습니다)
+      const err=new Error('MODEL_REJECTED'); err.status=res.status; err.detail=t.slice(0,200); err.model=model;
+      throw err;
     }
     const data=await res.json();
     const cand=data.candidates && data.candidates[0];
@@ -1659,7 +1664,7 @@ async function callGeminiBrowser(prompt, maxTokens, timeoutMs, inline){
   // 세션당 1회, 저장된 모델이 아직 살아 있는지 확인하고 없으면 자동 교체
   if(!__modelChecked){ __modelChecked=true; await ensureValidModel(); }
   const chain=geminiFallbackChain();
-  let dayExhausted=[]; let gone=[];
+  let dayExhausted=[]; let gone=[]; let rejected=[];
 
   for(let mi=0; mi<chain.length; mi++){
     const model=chain[mi];
@@ -1678,6 +1683,13 @@ async function callGeminiBrowser(prompt, maxTokens, timeoutMs, inline){
           try{ await fetchGeminiModels(true); }catch{}   // 목록 갱신
           break;                                          // 다음 모델로
         }
+        if(e.message==='MODEL_REJECTED'){
+          // 이 모델이 이 요청(예: 이미지 입력·JSON 강제출력)을 지원하지 않는 경우.
+          // 같은 모델로 재시도해도 같은 결과이므로 바로 다음 모델로 넘어간다.
+          rejected.push(`${e.model}(HTTP ${e.status})`);
+          notice(`${e.model} 에서 이 요청을 처리하지 못해 다음 모델로 넘어갑니다`);
+          break;
+        }
         if(e.message!=='RATE_LIMIT') throw e;
         const q=e.quota||{};
         if(q.per==='day'){
@@ -1693,17 +1705,25 @@ async function callGeminiBrowser(prompt, maxTokens, timeoutMs, inline){
       }
     }
   }
-  if(gone.length && !dayExhausted.length){
+  if(gone.length && !dayExhausted.length && !rejected.length){
     const e2=new Error(
       `사용할 수 있는 Gemini 모델을 찾지 못했어요.\n· 내려간 모델: ${gone.join(', ')}\n`+
       `· ⚙︎ 설정 → 🔄 모델 목록 새로고침 을 눌러 최신 모델을 불러와 주세요.`);
     throw e2;
   }
+  if(rejected.length && !dayExhausted.length){
+    const e3=new Error(
+      `시도한 모델이 모두 이 요청을 처리하지 못했어요.\n· 거부한 모델: ${rejected.join(', ')}\n`+
+      (inline ? `· 이미지 인식(항공권 스캔본 등)을 지원하지 않는 모델이 1순위로 선택됐을 수 있어요.\n` : '')+
+      `· ⚙︎ 설정 → 🔄 모델 목록 새로고침 후 드롭다운에서 다른 모델을 직접 골라 저장해 보세요.`);
+    throw e3;
+  }
   const err=new Error(
-    `Gemini 호출 한도에 걸렸어요.\n· 소진된 모델: ${dayExhausted.join(', ')}${gone.length?` · 내려간 모델: ${gone.join(', ')}`:''}\n`+
+    `Gemini 호출 한도에 걸렸어요.\n· 소진된 모델: ${dayExhausted.join(', ')}`
+    +`${gone.length?` · 내려간 모델: ${gone.join(', ')}`:''}${rejected.length?` · 거부한 모델: ${rejected.join(', ')}`:''}\n`+
     `· 한도는 API 키가 아니라 프로젝트 단위로 공유됩니다(Worker에 같은 키를 넣었다면 그쪽 호출도 함께 소진).\n`+
     `· 하루 한도라면 자정(태평양시)에 초기화됩니다. aistudio.google.com → 사용량에서 확인하세요.\n`+
-    `· ⚙︎ 설정에서 모델을 gemini-2.5-flash-lite로 바꾸면 한도가 더 넉넉합니다.`);
+    `· ⚙︎ 설정에서 다른 모델로 바꿔보면 한도가 남아 있을 수 있습니다.`);
   err.rateLimited=true;
   throw err;
 }
@@ -2991,7 +3011,7 @@ renderHistory(); // 페이지 열릴 때 최근 일정 목록 표시
    sw.js의 CACHE_NAME(예: 'ykh-travel-v4')과 항상 같은 v번호로 맞춰서 올리세요.
    화면 맨 아래 버전이 배포 후 바뀌었으면 새 코드가 실제로 반영된 것이고,
    그대로면 브라우저/SW 캐시가 옛 파일을 물고 있다는 뜻입니다. */
-const APP_VERSION = 'v7.9';
+const APP_VERSION = 'v8.0';
 document.getElementById('appVersion').textContent = 'YKH 여정 설계소 ' + APP_VERSION;
 
 /* ---------- PWA: 서비스 워커 등록 + 업데이트 감지 ---------- */
