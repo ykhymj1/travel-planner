@@ -441,10 +441,9 @@
         <button type="button" class="link" id="testGemini" style="padding:5px 10px">🔌 연결 테스트</button>
         <button type="button" class="link" id="clearGemini" style="padding:5px 10px">키 삭제</button>
         <select id="geminiModelSel" style="padding:6px 8px; border-radius:8px; border:1px solid var(--line); font:inherit; font-size:12.5px">
-          <option value="gemini-2.5-flash">gemini-2.5-flash (권장)</option>
-          <option value="gemini-2.5-flash-lite">gemini-2.5-flash-lite (한도 더 넉넉)</option>
-          <option value="gemini-2.5-pro">gemini-2.5-pro (품질 최고·한도 적음)</option>
+          <option value="">(연결 테스트를 누르면 사용 가능한 모델을 불러옵니다)</option>
         </select>
+        <button type="button" class="link" id="refreshModels" style="padding:5px 10px">🔄 모델 목록 새로고침</button>
       </div>
       <div id="geminiTestBox" style="display:none; margin-top:8px; padding:9px 11px; border-radius:9px; font-size:12.5px; line-height:1.6"></div>
       <p class="hint" style="margin-top:9px">
@@ -1018,6 +1017,48 @@ $('#modeSeg').addEventListener('click', e=>{
   renderModeHint();
 })();
 
+/* ---- 모델 드롭다운을 실제 사용 가능한 목록으로 채운다 ---- */
+async function loadModelOptions(force){
+  const sel=$('#geminiModelSel'); if(!sel) return;
+  const cur=geminiModel();
+  if(!geminiKey()){
+    sel.innerHTML='<option value="">(키를 넣고 연결 테스트를 눌러주세요)</option>';
+    return;
+  }
+  sel.innerHTML='<option value="">불러오는 중…</option>';
+  try{
+    const list=await fetchGeminiModels(force);
+    sel.innerHTML=list.map((m,i)=>{
+      const tag = i===0 ? ' — 권장' : (/lite/i.test(m.id) ? ' — 한도 넉넉' : (/pro/i.test(m.id) ? ' — 품질 우선' : ''));
+      return `<option value="${esc(m.id)}">${esc(m.id)}${tag}</option>`;
+    }).join('');
+    // 저장된 모델이 목록에 있으면 유지, 없으면 1순위로
+    sel.value = list.some(m=>m.id===cur) ? cur : list[0].id;
+    store.set('ykh_gmodel', sel.value);
+    return list;
+  }catch(e){
+    sel.innerHTML=`<option value="${esc(cur)}">${esc(cur)} (목록 조회 실패)</option>`;
+    throw e;
+  }
+}
+$('#refreshModels').addEventListener('click', async ()=>{
+  const box=$('#geminiTestBox');
+  box.style.display='block';
+  box.style.background='#F6F8FA'; box.style.border='1px solid #DDE3E8'; box.style.color='';
+  const key=$('#geminiKey').value.trim();
+  if(key) store.set('ykh_gemini', key);
+  box.innerHTML='🔄 사용 가능한 모델을 불러오는 중…';
+  try{
+    const list=await loadModelOptions(true);
+    box.style.background='#F1F8F2'; box.style.border='1px solid #9CC3A6'; box.style.color='#2F6B41';
+    box.innerHTML=`✅ <b>모델 ${list.length}개</b>를 찾았어요. 권장: <b>${esc(list[0].id)}</b><br>`
+      +`<span style="opacity:.8">${list.slice(0,6).map(m=>esc(m.id)).join(' · ')}${list.length>6?' …':''}</span>`;
+  }catch(e){
+    box.style.background='#FFF1F1'; box.style.border='1px solid #E5A9A9'; box.style.color='#A33';
+    box.innerHTML=`❌ ${esc(e.message||String(e))}`;
+  }
+});
+
 /* ---------- 브라우저 직접 모드 설정 ---------- */
 function renderGeminiState(){
   const box=$('#geminiTestBox');
@@ -1035,17 +1076,20 @@ $('#testGemini').addEventListener('click', async ()=>{
   const box=$('#geminiTestBox');
   const key=$('#geminiKey').value.trim();
   if(key) store.set('ykh_gemini', key);
-  store.set('ykh_gmodel', $('#geminiModelSel').value);
+  if($('#geminiModelSel').value) store.set('ykh_gmodel', $('#geminiModelSel').value);
   if(!geminiKey()){ showErr('Gemini API 키를 먼저 넣어주세요.'); return; }
 
   box.style.display='block';
   box.style.background='#F6F8FA'; box.style.border='1px solid #DDE3E8'; box.style.color='';
-  box.innerHTML='🔌 연결 테스트 중… (최대 25초)';
+  box.innerHTML='🔌 사용 가능한 모델 확인 중…';
   try{
+    let list=null;
+    try{ list=await loadModelOptions(true); }catch{}
+    box.innerHTML='🔌 연결 테스트 중… (최대 25초)';
     const r=await testGeminiBrowser();
     box.style.background='#F1F8F2'; box.style.border='1px solid #9CC3A6'; box.style.color='#2F6B41';
-    box.innerHTML=`✅ <b>연결 성공</b> (${r.ms}ms) · 모델 ${esc(geminiModel())}<br>`
-      +`<span style="opacity:.8">응답: ${esc(r.sample)}</span><br>`
+    box.innerHTML=`✅ <b>연결 성공</b> (${r.ms}ms) · 모델 <b>${esc(geminiModel())}</b><br>`
+      +(list?`<span style="opacity:.8">사용 가능한 모델 ${list.length}개를 불러왔어요.</span><br>`:'')
       +`<span style="opacity:.8">이제 저장하면 항상 정밀 모드로 일정이 만들어집니다.</span>`;
     renderModeHint();
   }catch(e){
@@ -1155,8 +1199,8 @@ function openConnModal(){
       : `현재 사용 중: <b>${esc(DEFAULT_WORKER)}</b> <span style="opacity:.7">(기본값)</span>`;
   }
   $('#geminiKey').value = geminiKey();
-  $('#geminiModelSel').value = geminiModel();
   renderGeminiState();
+  loadModelOptions(false).catch(()=>{});   // 캐시가 있으면 즉시, 없으면 조용히 실패
   openOv('#ovConn');
   checkWorkerVersion();
 }
@@ -1183,7 +1227,7 @@ $('#saveConn').addEventListener('click', ()=>{
   store.set('ykh_worker', u);
   store.set('ykh_coords', $('#coordToggle').checked ? '1' : '0');
   store.set('ykh_gemini', $('#geminiKey').value.trim());
-  store.set('ykh_gmodel', $('#geminiModelSel').value);
+  if($('#geminiModelSel').value) store.set('ykh_gmodel', $('#geminiModelSel').value);
   closeOv($('#ovConn'));
   showSetupBanner();
   renderModeHint();
@@ -1312,6 +1356,12 @@ async function geminiFetchOnce(prompt, maxTokens, timeoutMs, model, inline){
       const err=new Error('RATE_LIMIT'); err.quota=q; err.status=429;
       throw err;
     }
+    if(res.status===404){
+      // 모델이 내려간 경우 — 목록을 다시 받아 다음 모델로 넘어가게 한다
+      const t=await res.text().catch(()=> '');
+      const err=new Error('MODEL_GONE'); err.status=404; err.detail=t.slice(0,200); err.model=model;
+      throw err;
+    }
     if(!res.ok){
       const t=await res.text().catch(()=> '');
       if(res.status===400 && /API key/i.test(t)) throw new Error('Gemini API 키가 올바르지 않습니다. 설정에서 확인해 주세요.');
@@ -1329,11 +1379,81 @@ async function geminiFetchOnce(prompt, maxTokens, timeoutMs, model, inline){
   }finally{ clearTimeout(timer); }
 }
 
-/* 모델 대체 순서 — 하루 한도가 소진되면 한도가 더 넉넉한 모델로 넘어간다 */
+/* ============================================================================
+   모델 자동 탐색 (v7.7)
+   ----------------------------------------------------------------------------
+   모델명을 코드에 박아두면 구글이 모델을 내릴 때마다 404가 납니다.
+     "gemini-2.5-flash-lite is no longer available to new users" ← 실제로 겪음
+   그래서 ListModels API로 **지금 이 키에서 실제로 쓸 수 있는 모델**을 가져옵니다.
+   ========================================================================== */
+const MODELS_URL='https://generativelanguage.googleapis.com/v1beta/models';
+const MODEL_CACHE_KEY='ykh_models_v1';
+const MODEL_CACHE_TTL=24*3600*1000;   // 하루
+
+/* 모델 순위: flash 계열 우선(한도 넉넉·속도), 그 안에서 최신 버전 우선 */
+function scoreModel(id){
+  if(/embedding|aqa|imagen|veo|tts|audio|native-audio|live/i.test(id)) return -1;  // 텍스트 생성용 아님
+  if(/vision$/i.test(id)) return -1;              // 구형 vision 전용
+  let s=0;
+  if(/flash/i.test(id)) s+=100;                   // flash = 한도 넉넉
+  else if(/pro/i.test(id)) s+=40;                 // pro = 품질↑ 한도↓
+  if(/lite/i.test(id)) s+=10;                     // lite = 한도 더 넉넉
+  const v=/gemini-(\d+)\.?(\d*)/i.exec(id);
+  if(v) s+= parseInt(v[1],10)*10 + (v[2]?parseInt(v[2],10):0);   // 버전 높을수록 우선
+  if(/preview|exp|experimental/i.test(id)) s-=25; // 실험판은 후순위
+  if(/thinking/i.test(id)) s-=15;                 // 사고 특화는 느림
+  return s;
+}
+
+async function fetchGeminiModels(force){
+  const key=geminiKey();
+  if(!key) throw new Error('Gemini API 키가 없습니다.');
+  if(!force){
+    try{
+      const c=JSON.parse(store.get(MODEL_CACHE_KEY)||'null');
+      if(c && Date.now()-c.at < MODEL_CACHE_TTL && Array.isArray(c.models) && c.models.length) return c.models;
+    }catch{}
+  }
+  const res=await fetch(`${MODELS_URL}?key=${encodeURIComponent(key)}&pageSize=200`);
+  if(!res.ok){
+    const t=await res.text().catch(()=> '');
+    throw new Error(`모델 목록 조회 실패 ${res.status}: ${t.slice(0,160)}`);
+  }
+  const data=await res.json();
+  const models=(data.models||[])
+    .filter(m=>Array.isArray(m.supportedGenerationMethods) && m.supportedGenerationMethods.includes('generateContent'))
+    .map(m=>({ id:String(m.name||'').replace(/^models\//,''), label:m.displayName||'', score:0 }))
+    .filter(m=>m.id && /^gemini/i.test(m.id));
+  models.forEach(m=>m.score=scoreModel(m.id));
+  const usable=models.filter(m=>m.score>0).sort((a,b)=>b.score-a.score);
+  if(!usable.length) throw new Error('사용 가능한 Gemini 모델을 찾지 못했습니다.');
+  store.set(MODEL_CACHE_KEY, JSON.stringify({at:Date.now(), models:usable}));
+  return usable;
+}
+
+/* 저장된 모델이 목록에 없으면(내려간 모델) 최상위 모델로 자동 교체 */
+async function ensureValidModel(){
+  try{
+    const list=await fetchGeminiModels(false);
+    const cur=geminiModel();
+    if(!list.some(m=>m.id===cur)){
+      store.set('ykh_gmodel', list[0].id);
+      notice(`모델이 ${list[0].id}로 자동 변경됐어요 (이전 모델은 더 이상 제공되지 않음)`);
+    }
+    return list;
+  }catch{ return null; }
+}
+
+/* 모델 대체 순서 — 실제로 사용 가능한 목록 기준 (하드코딩 제거) */
 function geminiFallbackChain(){
   const first=geminiModel();
-  const all=['gemini-2.5-flash','gemini-2.5-flash-lite','gemini-2.0-flash'];
-  return [first, ...all.filter(m=>m!==first)];
+  let list=[];
+  try{
+    const c=JSON.parse(store.get(MODEL_CACHE_KEY)||'null');
+    if(c && Array.isArray(c.models)) list=c.models.map(m=>m.id);
+  }catch{}
+  if(!list.length) list=[first];                       // 목록이 아직 없으면 선택 모델만
+  return [...new Set([first, ...list])].slice(0,4);    // 최대 4개까지만 시도
 }
 
 let __gemNotice=null;   // 진행 표시줄에 대기 상황을 알리기 위한 콜백
@@ -1380,10 +1500,13 @@ function bumpUsage(n){
 }
 function todayUsage(){ return parseInt(store.get(usageKeyToday())||'0',10); }
 
+let __modelChecked=false;
 async function callGeminiBrowser(prompt, maxTokens, timeoutMs, inline){
   if(!geminiKey()) throw new Error('Gemini API 키가 없습니다.');
+  // 세션당 1회, 저장된 모델이 아직 살아 있는지 확인하고 없으면 자동 교체
+  if(!__modelChecked){ __modelChecked=true; await ensureValidModel(); }
   const chain=geminiFallbackChain();
-  let dayExhausted=[];
+  let dayExhausted=[]; let gone=[];
 
   for(let mi=0; mi<chain.length; mi++){
     const model=chain[mi];
@@ -1396,6 +1519,12 @@ async function callGeminiBrowser(prompt, maxTokens, timeoutMs, inline){
         if(mi>0) notice(`${model}로 처리했어요`);
         return r;
       }catch(e){
+        if(e.message==='MODEL_GONE'){
+          gone.push(e.model);
+          notice(`${e.model} 은(는) 더 이상 제공되지 않아 다음 모델로 넘어갑니다`);
+          try{ await fetchGeminiModels(true); }catch{}   // 목록 갱신
+          break;                                          // 다음 모델로
+        }
         if(e.message!=='RATE_LIMIT') throw e;
         const q=e.quota||{};
         if(q.per==='day'){
@@ -1411,8 +1540,14 @@ async function callGeminiBrowser(prompt, maxTokens, timeoutMs, inline){
       }
     }
   }
+  if(gone.length && !dayExhausted.length){
+    const e2=new Error(
+      `사용할 수 있는 Gemini 모델을 찾지 못했어요.\n· 내려간 모델: ${gone.join(', ')}\n`+
+      `· ⚙︎ 설정 → 🔄 모델 목록 새로고침 을 눌러 최신 모델을 불러와 주세요.`);
+    throw e2;
+  }
   const err=new Error(
-    `Gemini 호출 한도에 걸렸어요.\n· 소진된 모델: ${dayExhausted.join(', ')}\n`+
+    `Gemini 호출 한도에 걸렸어요.\n· 소진된 모델: ${dayExhausted.join(', ')}${gone.length?` · 내려간 모델: ${gone.join(', ')}`:''}\n`+
     `· 한도는 API 키가 아니라 프로젝트 단위로 공유됩니다(Worker에 같은 키를 넣었다면 그쪽 호출도 함께 소진).\n`+
     `· 하루 한도라면 자정(태평양시)에 초기화됩니다. aistudio.google.com → 사용량에서 확인하세요.\n`+
     `· ⚙︎ 설정에서 모델을 gemini-2.5-flash-lite로 바꾸면 한도가 더 넉넉합니다.`);
@@ -2680,7 +2815,7 @@ renderHistory(); // 페이지 열릴 때 최근 일정 목록 표시
    sw.js의 CACHE_NAME(예: 'ykh-travel-v4')과 항상 같은 v번호로 맞춰서 올리세요.
    화면 맨 아래 버전이 배포 후 바뀌었으면 새 코드가 실제로 반영된 것이고,
    그대로면 브라우저/SW 캐시가 옛 파일을 물고 있다는 뜻입니다. */
-const APP_VERSION = 'v7.6';
+const APP_VERSION = 'v7.7';
 document.getElementById('appVersion').textContent = 'YKH 여정 설계소 ' + APP_VERSION;
 
 /* ---------- PWA: 서비스 워커 등록 + 업데이트 감지 ---------- */
